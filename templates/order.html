@@ -6,14 +6,11 @@
 <body>
   <h2>Place Order</h2>
 
-  <form method="post">
+  <form method="post" action="/order">
     Quantity:<br>
     <input type="number" name="quantity" required><br><br>
-
-    Notes (optional):<br>
-    <textarea name="notes"></textarea><br><br>
-
     <button type="submit">Confirm</button>
+    <input type="hidden" name="menu" value="{{menu}}" >
   </form>
 
   <br>
