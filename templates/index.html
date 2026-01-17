@@ -1,26 +1,16 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>Select your meals</title>
+        <title>Who ARE you???</title>
     </head>
     
 <body>
     <h2>Order management system</h2>
 
-<p>Place and track catering requests.</p>
-<label for="menu">Select your meals:</label>
+<label for="menu">Select your role:</label>
 <form method="POST">
-    <select name="menu" id="menu" required>
-        <option value="">-- Choose your meal --</option>
-        <option value="Veg Meal">Veg Meal</option>
-        <option value="Non-Veg Meal">Non-Veg Meal</option>
-        <option value="Paneer Rice">Paneer Rice</option>
-        <option value="Chicken Biryani">Chicken Biryani</option>
-        <option value="Mini Meals">Mini Meals</option>
-    </select>
-
-<br></br>
-<button type="submit">Place Order</button>
+    <button type="submit" name="role" value="user">User</button>
+    <button type="submit" name="role" value="admin">Admin</button>
 </form>
 </body>
 </html>
