@@ -1,15 +1,19 @@
 from flask import Flask, render_template, request, redirect, url_for
 from datetime import datetime
 app = Flask(__name__)
-
+orders=[]
 # ---------------- INDEX ----------------
 # Select menu
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        menu = request.form.get("menu")   # READ menu here
-        return redirect(url_for("order", menu=menu))  # PASS it forward
+        role=request.form.get("role")
+        if role=="user":
+            return redirect(url_for("order"))
+        elif role=="admin":
+            return redirect(url_for("admin"))
     return render_template("index.html")
+
 
 
 # ---------------- ORDER ----------------
@@ -19,7 +23,13 @@ def order():
     if request.method == "POST":
         selected_menu = request.form.get("menu")     # FROM hidden input
         quantity = request.form.get("quantity")      # FROM form
-        order_time=datetime.now().strftime("%I:%M:%p | %d:%b:%Y")
+        order_time=datetime.now().strftime("%I:%M:%p | %d %b %Y")
+        order_data={
+            "menu":selected_menu,
+            "quantity":quantity,
+            "time":order_time
+        }
+        orders.append(order_data)
         return redirect(
             url_for(
                 "success",
@@ -28,10 +38,7 @@ def order():
                 time=order_time
             )
         )
-
-    # GET request (coming from index)
-    menu = request.args.get("menu")
-    return render_template("order.html", menu=menu)
+    return render_template("order.html")
 
 
 # ---------------- SUCCESS ----------------
@@ -49,6 +56,9 @@ def success():
         time=time
     )
 
+@app.route('/admin')
+def admin():
+    return render_template("admin.html",orders=orders)
 
 if __name__ == "__main__":
     app.run(debug=True)
