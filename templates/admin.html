@@ -1,27 +1,17 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Admin Panel</title>
-</head>
-<body>
+<h2>Admin Panel</h2>
 
-<h2>All Orders</h2>
+{% for order in orders %}
+    <p>
+        {{ order.menu }} |
+        Qty: {{ order.quantity }} |
+        Status: <b>{{ order.status }}</b> |
+        Updated: {{ order.status_time }}
+    </p>
 
-{% if orders %}
-    <ul>
-    {% for order in orders %}
-        <li>
-            {{ order.menu }} |
-            Qty: {{ order.quantity }} |
-            Time: {{ order.time }}
-        </li>
-    {% endfor %}
-    </ul>
-{% else %}
-    <p>No orders yet.</p>
-{% endif %}
+    <a href="/update_status/{{ loop.index0 }}/Preparing">Preparing</a> |
+    <a href="/update_status/{{ loop.index0 }}/Ready">Ready</a>
+
+    <hr>
+{% endfor %}
 
 <a href="/">Home</a>
-
-</body>
-</html>
