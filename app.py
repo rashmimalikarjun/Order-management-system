@@ -1,64 +1,79 @@
 from flask import Flask, render_template, request, redirect, url_for
 from datetime import datetime
+
 app = Flask(__name__)
-orders=[]
+
+# In-memory storage (temporary)
+orders = []
+
+
 # ---------------- INDEX ----------------
-# Select menu
+# Role selection
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        role=request.form.get("role")
-        if role=="user":
+        
+        role = request.form.get("role")
+        print("ROLE:",role)
+        if role == "user":
             return redirect(url_for("order"))
-        elif role=="admin":
+
+        elif role == "admin":
             return redirect(url_for("admin"))
+
     return render_template("index.html")
 
 
-
 # ---------------- ORDER ----------------
-# Enter quantity
+# User places order
 @app.route("/order", methods=["GET", "POST"])
 def order():
     if request.method == "POST":
-        selected_menu = request.form.get("menu")     # FROM hidden input
-        quantity = request.form.get("quantity")      # FROM form
-        order_time=datetime.now().strftime("%I:%M:%p | %d %b %Y")
-        order_data={
-            "menu":selected_menu,
-            "quantity":quantity,
-            "time":order_time
+        username = request.form.get("username")
+        menu = request.form.get("menu")
+        quantity = request.form.get("quantity")
+
+        order = {
+            "username": username,
+            "menu": menu,
+            "quantity": quantity,
+            "status": "Order Placed",
+            "status_time": datetime.now().strftime("%I:%M %p | %d %b %Y")
         }
-        orders.append(order_data)
-        return redirect(
-            url_for(
-                "success",
-                menu=selected_menu,
-                quantity=quantity,
-                time=order_time
-            )
-        )
+        orders.append(order)
+        index = len(orders) - 1
+        return redirect(url_for("success", index=index))
+
     return render_template("order.html")
 
-
 # ---------------- SUCCESS ----------------
-# Show confirmation
+# User sees live status
 @app.route("/success")
 def success():
-    menu = request.args.get("menu")
-    quantity = request.args.get("quantity")
-    time=request.args.get("time")
+    index = int(request.args.get("index"))
+    order = orders[index]
 
     return render_template(
         "success.html",
-        menu=menu,
-        quantity=quantity,
-        time=time
+        order=order
     )
 
-@app.route('/admin')
+
+# ---------------- ADMIN ----------------
+# Admin dashboard
+@app.route("/admin")
 def admin():
-    return render_template("admin.html",orders=orders)
+    return render_template("admin.html", orders=orders)
+
+
+# ---------------- UPDATE STATUS ----------------
+# Admin updates order status
+@app.route("/update_status/<int:index>/<status>")
+def update_status(index, status):
+    orders[index]["status"] = status
+    orders[index]["status_time"] = datetime.now().strftime("%I:%M %p | %d %b %Y")
+    return redirect(url_for("admin"))
+
 
 if __name__ == "__main__":
     app.run(debug=True)
