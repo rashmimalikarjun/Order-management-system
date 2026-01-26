@@ -4,14 +4,22 @@
   <title>Order Submitted</title>
 </head>
 <body>
-  <h2>Order Submitted Successfully</h2>
+  <h2>✅ Order Submitted Successfully</h2>
   <p>Your catering request has been recorded.</p>
-  <p>You don't need to wait. we have received your order.</p>
-  <p>Menu: {{order.menu}} </p>
-  <p>Quantity : {{order.quantity}} </p>
-  <p>Status:<strong>{{order.status}}</strong></p>
-  <p>You last updated: {{order.status_time}} gotchaa</p>
-  <p>Username: {{ order.username }}</p>
-<a href="/">Home</a>
+  <p>You don't need to wait. We have received your order.</p>
+  
+  <hr>
+  
+  <h3>Order Details:</h3>
+  <p><strong>Username:</strong> {{ order.username }}</p>
+  <p><strong>Menu:</strong> {{ order.menu }}</p>
+  <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+  <p><strong>Status:</strong> <span style="color: orange;">{{ order.status }}</span></p>
+  <p><strong>Ordered at:</strong> {{ order.time }}</p>
+  <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+  
+  <hr>
+  
+  <a href="/">Home</a> | <a href="{{ url_for('status') }}">Check Order Status</a>
 </body>
 </html>
