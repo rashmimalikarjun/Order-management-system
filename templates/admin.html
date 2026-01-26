@@ -1,13 +1,15 @@
 <h2>Admin Panel</h2>
 
 {% for order in orders %}
-    <p>
-        {{ order.menu }} |
-        Qty: {{ order.quantity }} |
-        Status: <b>{{ order.status }}</b> |
-        Updated: {{ order.status_time }}
-    </p>
+<p>
+User: <b>{{ order.username }}</b> |
+Menu: {{ order.menu }} |
+Qty: {{ order.quantity }} |
+Status: {{ order.status }} |
+Updated: {{ order.status_time }}
+</p>
 
+    <a href="/update_status/{{ loop.index0 }}/Received">Received</a> |
     <a href="/update_status/{{ loop.index0 }}/Preparing">Preparing</a> |
     <a href="/update_status/{{ loop.index0 }}/Ready">Ready</a>
 
