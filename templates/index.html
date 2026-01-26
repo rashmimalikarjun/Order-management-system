@@ -1,17 +1,25 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Role Selection</title>
+  <title>Catering System - Home</title>
 </head>
 <body>
-
-<h2>Order Management System</h2>
-<p>Select your role:</p>
-
-<form method="POST">
-    <button type="submit" name="role" value="user">User</button>
-    <button type="submit" name="role" value="admin">Admin</button>
-</form>
-
+  <h1>Welcome to Our Catering System</h1>
+  <h2>Select Your Role</h2>
+  
+  <form method="POST" action="{{ url_for('index') }}">
+    <button type="submit" name="role" value="user" style="padding: 10px 20px; font-size: 16px;">
+      🍽️ Place Order (User)
+    </button>
+    <br><br>
+    <button type="submit" name="role" value="admin" style="padding: 10px 20px; font-size: 16px;">
+      👨‍💼 Admin Dashboard
+    </button>
+  </form>
+  
+  <br>
+  <hr>
+  <p>Already placed an order?</p>
+  <a href="{{ url_for('status') }}">📋 Check Order Status</a>
 </body>
 </html>
