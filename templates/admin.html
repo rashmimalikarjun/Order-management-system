@@ -1,19 +1,47 @@
-<h2>Admin Panel</h2>
-
-{% for order in orders %}
-<p>
-User: <b>{{ order.username }}</b> |
-Menu: {{ order.menu }} |
-Qty: {{ order.quantity }} |
-Status: {{ order.status }} |
-Updated: {{ order.status_time }}
-</p>
-
-    <a href="/update_status/{{ loop.index0 }}/Received">Received</a> |
-    <a href="/update_status/{{ loop.index0 }}/Preparing">Preparing</a> |
-    <a href="/update_status/{{ loop.index0 }}/Ready">Ready</a>
-
-    <hr>
-{% endfor %}
-
-<a href="/">Home</a>
+<!-- templates/admin.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Dashboard</title>
+</head>
+<body>
+  <h2>Admin Dashboard - All Orders</h2>
+  
+  {% if orders %}
+    <table border="1" cellpadding="10">
+      <tr>
+        <th>Order ID</th>
+        <th>Username</th>
+        <th>Menu</th>
+        <th>Quantity</th>
+        <th>Status</th>
+        <th>Order Time</th>
+        <th>Last Updated</th>
+        <th>Actions</th>
+      </tr>
+      {% for order in orders %}
+        <tr>
+          <td>{{ order.id }}</td>
+          <td>{{ order.username }}</td>
+          <td>{{ order.menu }}</td>
+          <td>{{ order.quantity }}</td>
+          <td><strong>{{ order.status }}</strong></td>
+          <td>{{ order.time }}</td>
+          <td>{{ order.status_time }}</td>
+          <td>
+            <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a> |
+            <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a> |
+            <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a> |
+            <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p>No orders yet.</p>
+  {% endif %}
+  
+  <br>
+  <a href="/">Back to Home</a>
+</body>
+</html>
