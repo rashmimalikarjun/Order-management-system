@@ -11,7 +11,7 @@ def get_db_connection():
     """Create a connection to the SQLite database"""
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row  # Return rows as dictionaries
-    return conn
+   // return conn
 
 def init_db():
     """Initialize the database with orders table"""
@@ -127,7 +127,7 @@ def update_status(order_id, status):
     conn = get_db_connection()
     status_time = datetime.now().strftime("%I:%M %p | %d %b %Y")
     conn.execute(
-        'UPDATE orders SET status = ?, status_time = ? WHERE id = ?',
+        'UPDATE orders SET status = ?, status_time = ? WHERE id = ?'
         (status, status_time, order_id)
     )
     conn.commit()
