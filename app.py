@@ -90,7 +90,45 @@ def success():
     
     return render_template("success.html", order=order)
 
-# ---------------- STATUS ----------------
+# ---------------- MY ORDERS (User Order History) ----------------
+# User views all their order history
+@app.route("/my-orders", methods=["GET", "POST"])
+def my_orders():
+    user_orders = []
+    username = None
+    
+    if request.method == "POST":
+        username = request.form.get("username")
+        
+        # Get all orders for this user from database
+        conn = get_db_connection()
+        user_orders = conn.execute(
+            'SELECT * FROM orders WHERE username = ? ORDER BY id DESC',
+            (username,)
+        ).fetchall()
+        conn.close()
+    
+    return render_template("my_orders.html", orders=user_orders, username=username)
+
+# ---------------- CANCEL ORDER ----------------
+# User cancels their pending order
+@app.route("/cancel-order/<int:order_id>")
+def cancel_order(order_id):
+    # Get the order to check its status
+    conn = get_db_connection()
+    order = conn.execute('SELECT * FROM orders WHERE id = ?', (order_id,)).fetchone()
+    
+    if order and order['status'] == 'Pending':
+        # Only allow cancellation if status is Pending
+        conn.execute('DELETE FROM orders WHERE id = ?', (order_id,))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('my_orders') + '?cancelled=true&username=' + order['username'])
+    else:
+        conn.close()
+        return redirect(url_for('my_orders') + '?error=cannot_cancel&username=' + (order['username'] if order else ''))
+
+# ---------------- STATUS (Quick Status Check) ----------------
 # User checks their order status
 @app.route("/status", methods=["GET", "POST"])
 def status():
