@@ -1,33 +1,145 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Place Order</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Place Order - Catering System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .nav-links {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .nav-links a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .nav-links a:hover {
+            color: #764ba2;
+        }
+    </style>
 </head>
 <body>
-  <h2>Your Order</h2>
-  <form method="POST" action="{{ url_for('order') }}">
-    <label>Username:</label><br>
-    <input type="text" name="username" required>
-    <br><br>
-    
-    <label>Menu:</label><br>
-    <select name="menu" required>
-        <option value="">-- Choose your meal --</option>
-        <option value="Veg Meal">Veg Meal</option>
-        <option value="Non-Veg Meal">Non-Veg Meal</option>
-        <option value="Paneer Rice">Paneer Rice</option>
-        <option value="Chicken Biryani">Chicken Biryani</option>
-        <option value="Mini Meals">Mini Meals</option>
-    </select>
-    <br><br>
-    
-    <label>Quantity:</label><br>
-    <input type="number" name="quantity" min="1" required>
-    <br><br>
-    
-    <button type="submit">Confirm order</button>
-  </form>
-  <br>
-  <a href="{{ url_for('index') }}">← Back to Home</a>
+    <div class="container">
+        <h1>🛒 Place Your Order</h1>
+
+        <form method="POST" action="{{ url_for('order') }}">
+            <div class="card">
+                <label for="username">👤 Your Name</label>
+                <input type="text" id="username" name="username" placeholder="Enter your name" required>
+                
+                <label for="menu">🍽️ Select Menu</label>
+                <select id="menu" name="menu" required>
+                    <option value="">-- Choose your meal --</option>
+                    <option value="Veg Meal">🥗 Veg Meal</option>
+                    <option value="Non-Veg Meal">🍗 Non-Veg Meal</option>
+                    <option value="Paneer Rice">🍚 Paneer Rice</option>
+                    <option value="Chicken Biryani">🍛 Chicken Biryani</option>
+                    <option value="Mini Meals">🍱 Mini Meals</option>
+                </select>
+                
+                <label for="quantity">🔢 Quantity</label>
+                <input type="number" id="quantity" name="quantity" min="1" max="100" placeholder="How many?" required>
+                
+                <button type="submit">✅ Confirm Order</button>
+            </div>
+        </form>
+
+        <div class="nav-links">
+            <a href="/">← Back to Home</a>
+        </div>
+    </div>
 </body>
 </html>
