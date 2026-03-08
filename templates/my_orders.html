@@ -130,6 +130,9 @@
                     <div class="order-card">
                         <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
                         <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+                        <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
+                        <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+                        <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
                         <p>
                             <strong>Status:</strong> 
                             <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
