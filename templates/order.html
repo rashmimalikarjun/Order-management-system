@@ -5,140 +5,224 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Place Order - Catering System</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
-            max-width: 700px;
+            max-width: 1100px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            padding: 40px;
-            animation: fadeIn 0.5s ease-in;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            padding: 24px;
         }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
         }
-
-        h1 {
-            font-size: 2.5em;
-            text-align: center;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 30px;
+        h1 { margin: 0; color: #1f2937; }
+        .cart-icon {
+            background: #111827;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 14px;
         }
-
-        .card {
-            background: #f8f9fa;
-            border-radius: 15px;
-            padding: 25px;
-            margin: 20px 0;
+        .layout {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1.3fr 1fr;
+            gap: 16px;
         }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 600;
-            font-size: 16px;
+        .panel {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            background: #f9fafb;
         }
-
-        input[type="text"],
-        input[type="number"],
-        select {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .item {
+            border: 1px solid #d1d5db;
             border-radius: 10px;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            margin-bottom: 20px;
+            background: #fff;
+            padding: 12px;
         }
-
-        input:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+        .item h3 { margin: 0 0 6px; font-size: 18px; }
+        .price { color: #065f46; font-weight: 700; margin-bottom: 8px; }
+        input[type="number"], input[type="text"] {
             width: 100%;
-            padding: 15px;
+            padding: 9px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            margin-top: 6px;
+        }
+        button, .btn {
             border: none;
-            border-radius: 10px;
-            font-size: 18px;
-            font-weight: 600;
+            border-radius: 8px;
+            padding: 9px 12px;
+            font-weight: 700;
             cursor: pointer;
-            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            color: #fff;
+            background: #4f46e5;
+        }
+        .btn-danger { background: #dc2626; }
+        .btn-muted { background: #475569; }
+        .cart-table {
+            width: 100%;
+            border-collapse: collapse;
             margin-top: 10px;
         }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        .cart-table th, .cart-table td {
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            padding: 8px 6px;
+            font-size: 14px;
+            vertical-align: top;
         }
-
-        .nav-links {
-            text-align: center;
-            margin: 30px 0;
+        .totals {
+            margin-top: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
         }
-
-        .nav-links a {
-            color: #667eea;
-            text-decoration: none;
+        .checkout {
+            margin-top: 14px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 12px;
+        }
+        .alert {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #fee2e2;
+            color: #991b1b;
             font-weight: 600;
         }
-
-        .nav-links a:hover {
-            color: #764ba2;
+        .nav {
+            margin-top: 16px;
+            text-align: center;
+        }
+        .nav a { color: #4f46e5; font-weight: 700; text-decoration: none; }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🛒 Place Your Order</h1>
+        <div class="topbar">
+            <h1>Place Your Order</h1>
+            <div class="cart-icon">Cart: {{ cart_count }} item(s)</div>
+        </div>
 
-        <form method="POST" action="{{ url_for('order') }}">
-            <div class="card">
-                <label for="username">👤 Your Name</label>
-                <input type="text" id="username" name="username" placeholder="Enter your name" required>
-                
-                <label for="menu">🍽️ Select Menu</label>
-                <select id="menu" name="menu" required>
-                    <option value="">-- Choose your meal --</option>
-                    <option value="Veg Meal">🥗 Veg Meal</option>
-                    <option value="Non-Veg Meal">🍗 Non-Veg Meal</option>
-                    <option value="Paneer Rice">🍚 Paneer Rice</option>
-                    <option value="Chicken Biryani">🍛 Chicken Biryani</option>
-                    <option value="Mini Meals">🍱 Mini Meals</option>
-                </select>
-                
-                <label for="quantity">🔢 Quantity</label>
-                <input type="number" id="quantity" name="quantity" min="1" max="100" placeholder="How many?" required>
-                
-                <button type="submit">✅ Confirm Order</button>
+        {% if error == 'username_required' %}
+            <div class="alert">Please enter your name before checkout.</div>
+        {% elif error == 'empty_cart' %}
+            <div class="alert">Your cart is empty. Add at least one menu item.</div>
+        {% elif error == 'payment_required' %}
+            <div class="alert">Please complete QR payment and enter UPI reference number.</div>
+        {% endif %}
+
+        <div class="layout">
+            <div class="panel">
+                <h2>Menu</h2>
+                {% if menu_items %}
+                    <div class="menu-grid">
+                        {% for item in menu_items %}
+                            <div class="item">
+                                <h3>{{ item.emoji }} {{ item.name }}</h3>
+                                <div class="price">INR {{ '%.2f'|format(item.price) }}</div>
+                                <form method="POST" action="{{ url_for('add_to_cart') }}">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <label>Quantity</label>
+                                    <input type="number" name="quantity" min="1" max="100" value="1" required>
+                                    <button type="submit" style="margin-top:8px; width:100%;">Add to Cart</button>
+                                </form>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p>No menu items available right now.</p>
+                {% endif %}
             </div>
-        </form>
 
-        <div class="nav-links">
-            <a href="/">← Back to Home</a>
+            <div class="panel">
+                <h2>Your Cart</h2>
+                {% if cart_items %}
+                    <table class="cart-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Price</th>
+                                <th>Qty</th>
+                                <th>Subtotal</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in cart_items %}
+                                <tr>
+                                    <td>{{ item.emoji }} {{ item.name }}</td>
+                                    <td>INR {{ '%.2f'|format(item.price) }}</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('update_cart') }}">
+                                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                                            <input type="number" name="quantity" min="0" max="100" value="{{ item.quantity }}" style="width:72px; margin:0;">
+                                            <button type="submit" class="btn-muted" style="margin-top:6px;">Update</button>
+                                        </form>
+                                    </td>
+                                    <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                                    <td>
+                                        <a class="btn btn-danger" href="{{ url_for('remove_from_cart', item_id=item.id) }}">Remove</a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <div class="totals">Grand Total: INR {{ '%.2f'|format(cart_total) }}</div>
+
+                    <div class="checkout">
+                        <form method="POST" action="{{ url_for('order') }}">
+                            <label for="username"><strong>Your Name</strong></label>
+                            <input id="username" name="username" type="text" placeholder="Enter your name" value="{{ username or '' }}" required>
+                            <div style="margin-top:12px; padding:10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff;">
+                                <p style="margin:0 0 8px;"><strong>Pay via UPI QR</strong></p>
+                                <img src="{{ qr_url }}" alt="UPI QR" style="width:180px; height:180px; border:1px solid #ddd; border-radius:8px;">
+                                <p style="margin:8px 0 2px; font-size:13px;"><strong>UPI ID:</strong> {{ upi_id }}</p>
+                                <p style="margin:0 0 2px; font-size:13px;"><strong>Receiver:</strong> {{ upi_name }}</p>
+                                <p style="margin:0; font-size:13px;"><strong>Amount:</strong> INR {{ '%.2f'|format(cart_total) }}</p>
+                                <p style="margin:6px 0 0; font-size:12px;">
+                                    <a href="{{ upi_link }}">Open UPI Payment Link</a>
+                                </p>
+                            </div>
+                            <label for="payment_reference" style="margin-top:10px;"><strong>UPI Reference / UTR</strong></label>
+                            <input id="payment_reference" name="payment_reference" type="text" placeholder="Enter payment reference number" value="{{ payment_reference or '' }}" required>
+                            <button type="submit" style="margin-top:10px; width:100%;">Confirm Order</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p>Your cart is empty.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="nav">
+            <a href="{{ url_for('index') }}">Back to Home</a>
         </div>
     </div>
 </body>
