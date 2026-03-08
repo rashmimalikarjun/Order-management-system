@@ -1,47 +1,26 @@
-<!-- templates/admin.html -->
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Admin Dashboard</title>
+  <title>Order Submitted</title>
 </head>
 <body>
-  <h2>Admin Dashboard - All Orders</h2>
+  <h2>✅ Order Submitted Successfully</h2>
+  <p>Your catering request has been recorded.</p>
+  <p>You don't need to wait. We have received your order.</p>
   
-  {% if orders %}
-    <table border="1" cellpadding="10">
-      <tr>
-        <th>Order ID</th>
-        <th>Username</th>
-        <th>Menu</th>
-        <th>Quantity</th>
-        <th>Status</th>
-        <th>Order Time</th>
-        <th>Last Updated</th>
-        <th>Actions</th>
-      </tr>
-      {% for order in orders %}
-        <tr>
-          <td>{{ order.id }}</td>
-          <td>{{ order.username }}</td>
-          <td>{{ order.menu }}</td>
-          <td>{{ order.quantity }}</td>
-          <td><strong>{{ order.status }}</strong></td>
-          <td>{{ order.time }}</td>
-          <td>{{ order.status_time }}</td>
-          <td>
-            <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
-          </td>
-        </tr>
-      {% endfor %}
-    </table>
-  {% else %}
-    <p>No orders yet.</p>
-  {% endif %}
+  <hr>
   
-  <br>
-  <a href="/">Back to Home</a>
+  <h3>Order Details:</h3>
+  <p><strong>Order ID:</strong> #{{ order.id }}</p>
+  <p><strong>Username:</strong> {{ order.username }}</p>
+  <p><strong>Menu:</strong> {{ order.menu }}</p>
+  <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+  <p><strong>Status:</strong> <span style="color: orange;">{{ order.status }}</span></p>
+  <p><strong>Ordered at:</strong> {{ order.time }}</p>
+  <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+  
+  <hr>
+  
+  <a href="/">Home</a> | <a href="{{ url_for('my_orders') }}">My Orders</a>
 </body>
 </html>
