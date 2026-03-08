@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Orders</title>
+  <style>
+    .order-card {
+      border: 2px solid #ddd;
+      padding: 15px;
+      margin: 10px 0;
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    .status-pending { color: orange; font-weight: bold; }
+    .status-preparing { color: blue; font-weight: bold; }
+    .status-ready { color: green; font-weight: bold; }
+    .status-delivered { color: purple; font-weight: bold; }
+    .cancel-btn {
+      background-color: #ff4444;
+      color: white;
+      padding: 5px 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      margin-top: 10px;
+    }
+    .cancel-btn:hover {
+      background-color: #cc0000;
+    }
+    .success-msg { color: green; padding: 10px; background: #d4edda; border-radius: 5px; }
+    .error-msg { color: red; padding: 10px; background: #f8d7da; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <h2>📋 My Order History</h2>
+  
+  <form method="POST" action="{{ url_for('my_orders') }}">
+    <label>Enter your username:</label><br>
+    <input type="text" name="username" required value="{{ username or '' }}" placeholder="Your username">
+    <button type="submit">View My Orders</button>
+  </form>
+  
+  <hr>
+  
+  <!-- Success/Error Messages -->
+  {% if request.args.get('cancelled') %}
+    <p class="success-msg">✅ Order cancelled successfully!</p>
+  {% endif %}
+  
+  {% if request.args.get('error') == 'cannot_cancel' %}
+    <p class="error-msg">❌ Cannot cancel order - it's already being prepared or completed!</p>
+  {% endif %}
+  
+  {% if username %}
+    <h3>Orders for: <strong>{{ username }}</strong></h3>
+    
+    {% if orders %}
+      <p>Total Orders: <strong>{{ orders|length }}</strong></p>
+      
+      {% for order in orders %}
+        <div class="order-card">
+          <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
+          <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+          <p>
+            <strong>Status:</strong> 
+            <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
+          </p>
+          <p><strong>Ordered:</strong> {{ order.time }}</p>
+          <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+          
+          {% if order.status == 'Pending' %}
+            <p style="color: orange;">⏳ Your order is waiting to be prepared</p>
+            <a href="{{ url_for('cancel_order', order_id=order.id) }}" 
+               class="cancel-btn"
+               onclick="return confirm('Are you sure you want to cancel Order #{{ order.id }}?')">
+              🗑️ Cancel Order
+            </a>
+          {% elif order.status == 'Preparing' %}
+            <p style="color: blue;">👨‍🍳 Your order is being prepared</p>
+            <small style="color: gray;">⚠️ Cannot cancel - already in preparation</small>
+          {% elif order.status == 'Ready' %}
+            <p style="color: green;">✅ Your order is ready for pickup!</p>
+          {% elif order.status == 'Delivered' %}
+            <p style="color: purple;">🎉 Order completed!</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+      
+    {% else %}
+      <p style="color: red;">No orders found for username: <strong>{{ username }}</strong></p>
+      <p>Make sure you entered the correct username, or <a href="{{ url_for('order') }}">place your first order</a>!</p>
+    {% endif %}
+  {% else %}
+    <p>Enter your username above to view your order history.</p>
+  {% endif %}
+  
+  <br>
+  <a href="/">🏠 Home</a> | <a href="{{ url_for('order') }}">➕ Place New Order</a>
+</body>
+</html>
