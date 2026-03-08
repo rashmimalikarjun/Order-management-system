@@ -5,157 +5,111 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order Success - Catering System</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
-            max-width: 700px;
+            max-width: 900px;
             margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            padding: 40px;
-            animation: fadeIn 0.5s ease-in;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+            padding: 24px;
         }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        h1 {
-            font-size: 2.2em;
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-        }
-
-        .success-icon {
-            font-size: 80px;
-            text-align: center;
-            margin: 20px 0;
-            animation: bounce 0.8s ease;
-        }
-
-        @keyframes bounce {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-
+        h1 { margin: 0 0 8px; color: #111827; }
+        .muted { color: #4b5563; margin-bottom: 16px; }
         .card {
-            background: #f8f9fa;
-            border-radius: 15px;
-            padding: 25px;
-            margin: 30px 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 14px;
+            background: #f9fafb;
         }
-
-        table {
-            width: 100%;
-        }
-
-        table td {
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        table td:first-child {
-            font-weight: 600;
-            color: #555;
-            width: 40%;
-        }
-
         .status {
             display: inline-block;
-            padding: 6px 15px;
-            border-radius: 20px;
-            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 13px;
+            background: #ffedd5;
+            color: #9a3412;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 9px;
+            border-bottom: 1px solid #e5e7eb;
             font-size: 14px;
-            background: #fff3cd;
-            color: #856404;
         }
-
+        th { background: #f3f4f6; }
+        .total {
+            text-align: right;
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+        }
+        .actions { text-align: center; margin-top: 16px; }
         .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
             display: inline-block;
-            margin: 5px;
+            text-decoration: none;
+            margin: 4px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-weight: 700;
+            color: #fff;
+            background: #4f46e5;
         }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
-
-        .nav-links {
-            text-align: center;
-            margin-top: 30px;
-        }
+        .btn.alt { background: #0f766e; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="success-icon">✅</div>
-        <h1>Order Placed Successfully!</h1>
-        <p style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 20px;">
-            Your catering request has been recorded.
-        </p>
+        <h1>Order Placed Successfully</h1>
+        <p class="muted">Your order has been recorded.</p>
 
         <div class="card">
-            <h3 style="text-align: center; margin-bottom: 20px;">📋 Order Details</h3>
-            
-            <table>
-                <tr>
-                    <td>Order ID:</td>
-                    <td><strong>#{{ order.id }}</strong></td>
-                </tr>
-                <tr>
-                    <td>Customer:</td>
-                    <td>{{ order.username }}</td>
-                </tr>
-                <tr>
-                    <td>Menu:</td>
-                    <td>{{ order.menu }}</td>
-                </tr>
-                <tr>
-                    <td>Quantity:</td>
-                    <td>{{ order.quantity }}</td>
-                </tr>
-                <tr>
-                    <td>Status:</td>
-                    <td><span class="status">{{ order.status }}</span></td>
-                </tr>
-                <tr>
-                    <td>Order Time:</td>
-                    <td>{{ order.time }}</td>
-                </tr>
-            </table>
+            <p><strong>Order ID:</strong> #{{ order.id }}</p>
+            <p><strong>Customer:</strong> {{ order.username }}</p>
+            <p><strong>Status:</strong> <span class="status">{{ order.status }}</span></p>
+            <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+            <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+            <p><strong>Order Time:</strong> {{ order.time }}</p>
+            <p><strong>Total Quantity:</strong> {{ order.quantity }}</p>
         </div>
 
-        <div class="nav-links">
-            <a href="/" class="btn">🏠 Back to Home</a>
-            <a href="{{ url_for('my_orders', username=order.username) }}" class="btn btn-success">📋 View All My Orders</a>
+        <div class="card">
+            <h3 style="margin-top:0;">Order Items</h3>
+            <table>
+                <tr>
+                    <th>Item</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Subtotal</th>
+                </tr>
+                {% for item in order_items %}
+                    <tr>
+                        <td>{{ item.item_name }}</td>
+                        <td>INR {{ '%.2f'|format(item.item_price) }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+            <div class="total">Grand Total: INR {{ '%.2f'|format(order.total_price or 0) }}</div>
+        </div>
+
+        <div class="actions">
+            <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+            <a href="{{ url_for('my_orders', username=order.username) }}" class="btn alt">View My Orders</a>
         </div>
     </div>
 </body>
