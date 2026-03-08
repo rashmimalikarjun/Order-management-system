@@ -1,47 +1,264 @@
-<!-- templates/admin.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Admin Dashboard</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Manage Orders</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    .meta { color: #475569; margin-top: 4px; font-size: 14px; }
+    .btn {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #0f766e; }
+    .btn.ghost { background: #334155; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .stat {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+    .stat .label { font-size: 12px; color: #64748b; font-weight: 700; }
+    .stat .value { font-size: 24px; font-weight: 800; color: #0f172a; }
+    .filters {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .filter-grid label {
+      display: block;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .filter-grid input, .filter-grid select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .filter-actions { display: flex; gap: 8px; align-items: center; }
+    .summary { margin: 8px 0 16px; font-size: 14px; color: #334155; font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1060px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 12px 10px;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .status-pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      display: inline-block;
+    }
+    .status-pending { background: #ffedd5; color: #9a3412; }
+    .status-preparing { background: #dbeafe; color: #1e3a8a; }
+    .status-ready { background: #dcfce7; color: #166534; }
+    .status-delivered { background: #ede9fe; color: #5b21b6; }
+    .actions a {
+      text-decoration: none;
+      margin-right: 6px;
+      margin-bottom: 6px;
+      display: inline-block;
+      border: 1px solid #cbd5e1;
+      color: #1e293b;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #fff;
+    }
+    .actions a:hover { border-color: #2563eb; color: #2563eb; }
+    .empty {
+      padding: 20px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+      margin-top: 16px;
+    }
+  </style>
 </head>
 <body>
-  <h2>Admin Dashboard - All Orders</h2>
-  
-  {% if orders %}
-    <table border="1" cellpadding="10">
-      <tr>
-        <th>Order ID</th>
-        <th>Username</th>
-        <th>Menu</th>
-        <th>Quantity</th>
-        <th>Status</th>
-        <th>Order Time</th>
-        <th>Last Updated</th>
-        <th>Actions</th>
-      </tr>
-      {% for order in orders %}
-        <tr>
-          <td>{{ order.id }}</td>
-          <td>{{ order.username }}</td>
-          <td>{{ order.menu }}</td>
-          <td>{{ order.quantity }}</td>
-          <td><strong>{{ order.status }}</strong></td>
-          <td>{{ order.time }}</td>
-          <td>{{ order.status_time }}</td>
-          <td>
-            <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a> |
-            <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
-          </td>
-        </tr>
-      {% endfor %}
-    </table>
-  {% else %}
-    <p>No orders yet.</p>
-  {% endif %}
-  
-  <br>
-  <a href="/">Back to Home</a>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Manage Orders</h2>
+        <p class="meta">Search, filter, sort and update order workflow.</p>
+      </div>
+      <div>
+        <a href="{{ url_for('manage_menu') }}" class="btn secondary">Manage Menu Items</a>
+        <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Visible Orders</div>
+        <div class="value">{{ orders|length }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Revenue (Visible)</div>
+        <div class="value">INR {{ '%.2f'|format(total_revenue or 0) }}</div>
+      </div>
+    </div>
+
+    <form method="GET" action="{{ url_for('admin') }}" class="filters">
+      <div class="filter-grid">
+        <div>
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" placeholder="Search user" value="{{ filters.username }}">
+        </div>
+        <div>
+          <label for="status">Status</label>
+          <select id="status" name="status">
+            <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+            <option value="Pending" {% if filters.status == 'Pending' %}selected{% endif %}>Pending</option>
+            <option value="Preparing" {% if filters.status == 'Preparing' %}selected{% endif %}>Preparing</option>
+            <option value="Ready" {% if filters.status == 'Ready' %}selected{% endif %}>Ready</option>
+            <option value="Delivered" {% if filters.status == 'Delivered' %}selected{% endif %}>Delivered</option>
+          </select>
+        </div>
+        <div>
+          <label for="date_from">From Date</label>
+          <input id="date_from" name="date_from" type="date" value="{{ filters.date_from }}">
+        </div>
+        <div>
+          <label for="date_to">To Date</label>
+          <input id="date_to" name="date_to" type="date" value="{{ filters.date_to }}">
+        </div>
+        <div>
+          <label for="sort">Sort By</label>
+          <select id="sort" name="sort">
+            <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Date Newest</option>
+            <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Date Oldest</option>
+            <option value="quantity_desc" {% if filters.sort == 'quantity_desc' %}selected{% endif %}>Quantity High-Low</option>
+            <option value="quantity_asc" {% if filters.sort == 'quantity_asc' %}selected{% endif %}>Quantity Low-High</option>
+            <option value="status_asc" {% if filters.sort == 'status_asc' %}selected{% endif %}>Status Workflow</option>
+            <option value="status_desc" {% if filters.sort == 'status_desc' %}selected{% endif %}>Status Reverse</option>
+            <option value="total_desc" {% if filters.sort == 'total_desc' %}selected{% endif %}>Total High-Low</option>
+            <option value="total_asc" {% if filters.sort == 'total_asc' %}selected{% endif %}>Total Low-High</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">Apply</button>
+          <a href="{{ url_for('admin') }}" class="btn ghost">Reset</a>
+        </div>
+      </div>
+    </form>
+
+    <p class="summary">Showing {{ orders|length }} order(s)</p>
+
+    {% if orders %}
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th>S.No</th>
+            <th>Order ID</th>
+            <th>Username</th>
+            <th>Items Summary</th>
+            <th>Qty</th>
+            <th>Total</th>
+            <th>Payment</th>
+            <th>Reference</th>
+            <th>Status</th>
+            <th>Order Time</th>
+            <th>Last Updated</th>
+            <th>Actions</th>
+          </tr>
+          {% for order in orders %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>#{{ order.id }}</td>
+              <td>{{ order.username }}</td>
+              <td>{{ order.menu }}</td>
+              <td>{{ order.quantity }}</td>
+              <td><strong>INR {{ '%.2f'|format(order.total_price or 0) }}</strong></td>
+              <td>{{ order.payment_method }} / {{ order.payment_status }}</td>
+              <td>{{ order.payment_reference or '-' }}</td>
+              <td>
+                <span class="status-pill status-{{ order.status|lower }}">{{ order.status }}</span>
+              </td>
+              <td>{{ order.time }}</td>
+              <td>{{ order.status_time }}</td>
+              <td class="actions">
+                <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a>
+                <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a>
+                <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a>
+                <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">No orders available for selected filters.</div>
+    {% endif %}
+  </div>
 </body>
 </html>
