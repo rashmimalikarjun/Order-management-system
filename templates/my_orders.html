@@ -99,12 +99,6 @@
             font-weight: 600;
             margin: 0 15px;
         }
-        .search-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-        }
     </style>
 </head>
 <body>
@@ -119,69 +113,49 @@
             <p class="alert-error">❌ Cannot cancel order - it's already being prepared or completed!</p>
         {% endif %}
         
-        {% if username %}
-            <!-- User is logged in / username provided -->
-            <h3>Orders for: <strong>{{ username }}</strong></h3>
+        <h3>Orders for: <strong>{{ username }}</strong></h3>
+        
+        {% if orders %}
+            <p style="margin: 10px 0;">Total Orders: <strong>{{ orders|length }}</strong></p>
             
-            {% if orders %}
-                <p style="margin: 10px 0;">Total Orders: <strong>{{ orders|length }}</strong></p>
-                
-                {% for order in orders %}
-                    <div class="order-card">
-                        <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
-                        <p><strong>Quantity:</strong> {{ order.quantity }}</p>
-                        <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
-                        <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
-                        <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
-                        <p>
-                            <strong>Status:</strong> 
-                            <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
-                        </p>
-                        <p><strong>Ordered:</strong> {{ order.time }}</p>
-                        <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
-                        
-                        {% if order.status == 'Pending' %}
-                            <p style="color: orange;">⏳ Your order is waiting to be prepared</p>
-                            <a href="{{ url_for('cancel_order', order_id=order.id) }}" 
-                               class="cancel-btn"
-                               onclick="return confirm('Are you sure you want to cancel Order #{{ order.id }}?')">
-                                🗑️ Cancel Order
-                            </a>
-                        {% elif order.status == 'Preparing' %}
-                            <p style="color: blue;">👨‍🍳 Your order is being prepared</p>
-                            <small style="color: gray;">⚠️ Cannot cancel - already in preparation</small>
-                        {% elif order.status == 'Ready' %}
-                            <p style="color: green;">✅ Your order is ready for pickup!</p>
-                        {% elif order.status == 'Delivered' %}
-                            <p style="color: purple;">🎉 Order completed!</p>
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p class="alert-error">No orders found for username: <strong>{{ username }}</strong></p>
-                <p>You haven't placed any orders yet. <a href="{{ url_for('order') }}" style="color: #667eea; font-weight: 600;">Place your first order!</a></p>
-            {% endif %}
-            
-            <div style="text-align: center; margin-top: 20px;">
-                <form method="POST" action="{{ url_for('my_orders') }}" style="display: inline;">
-                    <input type="text" name="username" placeholder="Search another user" style="display: inline-block; width: 250px;">
-                    <button type="submit" style="display: inline-block;">🔍 Search</button>
-                </form>
-            </div>
-            
+            {% for order in orders %}
+                <div class="order-card">
+                    <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
+                    <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+                    <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
+                    <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+                    <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+                    <p>
+                        <strong>Status:</strong> 
+                        <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
+                    </p>
+                    <p><strong>Ordered:</strong> {{ order.time }}</p>
+                    <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+                    
+                    {% if order.status == 'Pending' %}
+                        <p style="color: orange;">⏳ Your order is waiting to be prepared</p>
+                        <a href="{{ url_for('cancel_order', order_id=order.id) }}" 
+                           class="cancel-btn"
+                           onclick="return confirm('Are you sure you want to cancel Order #{{ order.id }}?')">
+                            🗑️ Cancel Order
+                        </a>
+                    {% elif order.status == 'Preparing' %}
+                        <p style="color: blue;">👨‍🍳 Your order is being prepared</p>
+                        <small style="color: gray;">⚠️ Cannot cancel - already in preparation</small>
+                    {% elif order.status == 'Ready' %}
+                        <p style="color: green;">✅ Your order is ready for pickup!</p>
+                    {% elif order.status == 'Delivered' %}
+                        <p style="color: purple;">🎉 Order completed!</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
         {% else %}
-            <!-- No username - show search form -->
-            <div class="search-section">
-                <form method="POST" action="{{ url_for('my_orders') }}">
-                    <label>Enter your username to view orders:</label>
-                    <input type="text" name="username" required placeholder="Your username">
-                    <button type="submit">View My Orders</button>
-                </form>
-            </div>
+            <p class="alert-error">No orders found for username: <strong>{{ username }}</strong></p>
+            <p>You haven't placed any orders yet. <a href="{{ url_for('order') }}" style="color: #667eea; font-weight: 600;">Place your first order!</a></p>
         {% endif %}
         
         <div class="nav-links">
-            <a href="/">🏠 Home</a> | <a href="{{ url_for('order') }}">➕ Place New Order</a>
+            <a href="{{ url_for('index') }}">Home</a> | <a href="{{ url_for('order') }}">Place New Order</a> | <a href="{{ url_for('status') }}">Status</a> | <a href="{{ url_for('logout') }}">Logout</a>
         </div>
     </div>
 </body>
