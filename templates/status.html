@@ -1,23 +1,17 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Check Status - Catering System</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
             max-width: 900px;
             margin: 0 auto;
@@ -26,56 +20,9 @@
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             padding: 40px;
         }
-
-        h2 {
-            color: #333;
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 600;
-        }
-
-        input[type="text"] {
-            width: 100%;
-            max-width: 400px;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 16px;
-            margin-bottom: 15px;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        ul {
-            list-style: none;
-            margin-top: 30px;
-        }
-
+        h2 { color: #333; margin-bottom: 8px; }
+        .meta { color: #475569; margin-bottom: 18px; }
+        ul { list-style: none; margin-top: 10px; }
         li {
             background: #f8f9fa;
             padding: 20px;
@@ -83,12 +30,10 @@
             border-radius: 10px;
             border-left: 5px solid #667eea;
         }
-
         .status-pending { color: orange; font-weight: bold; }
         .status-preparing { color: blue; font-weight: bold; }
         .status-ready { color: green; font-weight: bold; }
         .status-delivered { color: purple; font-weight: bold; }
-
         .alert-error {
             background: #f8d7da;
             color: #842029;
@@ -97,36 +42,34 @@
             border-left: 4px solid #842029;
             margin: 20px 0;
         }
-
         .nav-links {
             text-align: center;
             margin-top: 30px;
         }
-
         .nav-links a {
             color: #667eea;
             text-decoration: none;
             font-weight: 600;
+            margin: 0 10px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>🔍 Check Order Status</h2>
-        
-        <form method="POST" action="{{ url_for('status') }}">
-            <label>Username:</label>
-            <input type="text" name="username" required placeholder="Enter your username">
-            <button type="submit">Check Status</button>
-        </form>
-        
+        <h2>Order Status</h2>
+        <p class="meta">Showing orders for <strong>{{ username }}</strong></p>
+
         {% if orders %}
-            <h3 style="margin-top: 30px;">Your Orders</h3>
             <ul>
                 {% for order in orders %}
                     <li>
-                        <strong>{{ order.menu }}</strong> (Qty: {{ order.quantity }}) —
-                        <b class="status-{{ order.status|lower }}">{{ order.status }}</b>
+                        <strong>{{ order.menu }}</strong> (Qty: {{ order.quantity }})
+                        <br>
+                        <strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}
+                        <br>
+                        <strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})
+                        <br>
+                        <strong>Status:</strong> <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
                         <br>
                         <small>Ordered: {{ order.time }}</small>
                         <br>
@@ -134,12 +77,14 @@
                     </li>
                 {% endfor %}
             </ul>
-        {% elif request.method == 'POST' %}
-            <p class="alert-error">No orders found for this username.</p>
+        {% else %}
+            <p class="alert-error">No orders found yet.</p>
         {% endif %}
-        
+
         <div class="nav-links">
-            <a href="/">← Back to Home</a>
+            <a href="{{ url_for('order') }}">Place Order</a> |
+            <a href="{{ url_for('my_orders') }}">My Orders</a> |
+            <a href="{{ url_for('logout') }}">Logout</a>
         </div>
     </div>
 </body>
