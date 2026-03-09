@@ -1,0 +1,10 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Local env files
+.env
+.env.*
+
+# Local runtime/uploads (optional if you don't want to commit these)
+# static/uploads/qr/
