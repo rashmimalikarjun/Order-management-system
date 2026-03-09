@@ -130,12 +130,12 @@
             <div class="cart-icon">Cart: {{ cart_count }} item(s)</div>
         </div>
 
-        {% if error == 'username_required' %}
-            <div class="alert">Please enter your name before checkout.</div>
-        {% elif error == 'empty_cart' %}
+        {% if error == 'empty_cart' %}
             <div class="alert">Your cart is empty. Add at least one menu item.</div>
-        {% elif error == 'payment_required' %}
-            <div class="alert">Please complete QR payment and enter UPI reference number.</div>
+        {% elif error == 'upi_reference_required' %}
+            <div class="alert">For UPI payment, enter the UPI reference. Or switch payment mode to Cash.</div>
+        {% elif error == 'stock_unavailable' %}
+            <div class="alert">Some items are out of stock or quantity is too high. Please review cart quantities.</div>
         {% endif %}
 
         <div class="layout">
@@ -147,10 +147,11 @@
                             <div class="item">
                                 <h3>{{ item.emoji }} {{ item.name }}</h3>
                                 <div class="price">INR {{ '%.2f'|format(item.price) }}</div>
+                                <div style="font-size:12px; color:#475569; margin-bottom:8px;">Stock: {{ item.stock_qty }}</div>
                                 <form method="POST" action="{{ url_for('add_to_cart') }}">
                                     <input type="hidden" name="item_id" value="{{ item.id }}">
                                     <label>Quantity</label>
-                                    <input type="number" name="quantity" min="1" max="100" value="1" required>
+                                    <input type="number" name="quantity" min="1" max="{{ item.stock_qty }}" value="1" required>
                                     <button type="submit" style="margin-top:8px; width:100%;">Add to Cart</button>
                                 </form>
                             </div>
@@ -198,8 +199,12 @@
 
                     <div class="checkout">
                         <form method="POST" action="{{ url_for('order') }}">
-                            <label for="username"><strong>Your Name</strong></label>
-                            <input id="username" name="username" type="text" placeholder="Enter your name" value="{{ username or '' }}" required>
+                            <p style="margin:0 0 8px;"><strong>Logged in as:</strong> {{ username }}</p>
+                            <label for="payment_mode" style="margin-top:10px;"><strong>Payment Method</strong></label>
+                            <select id="payment_mode" name="payment_mode" style="width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:8px; margin-top:6px;">
+                                <option value="upi" {% if payment_mode != 'cash' %}selected{% endif %}>UPI (Pay now)</option>
+                                <option value="cash" {% if payment_mode == 'cash' %}selected{% endif %}>Cash (Pay at delivery/pickup)</option>
+                            </select>
                             <div style="margin-top:12px; padding:10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff;">
                                 <p style="margin:0 0 8px;"><strong>Pay via UPI QR</strong></p>
                                 <img src="{{ qr_url }}" alt="UPI QR" style="width:180px; height:180px; border:1px solid #ddd; border-radius:8px;">
@@ -211,7 +216,7 @@
                                 </p>
                             </div>
                             <label for="payment_reference" style="margin-top:10px;"><strong>UPI Reference / UTR</strong></label>
-                            <input id="payment_reference" name="payment_reference" type="text" placeholder="Enter payment reference number" value="{{ payment_reference or '' }}" required>
+                            <input id="payment_reference" name="payment_reference" type="text" placeholder="Enter payment reference if paid now" value="{{ payment_reference or '' }}">
                             <button type="submit" style="margin-top:10px; width:100%;">Confirm Order</button>
                         </form>
                     </div>
@@ -222,8 +227,32 @@
         </div>
 
         <div class="nav">
-            <a href="{{ url_for('index') }}">Back to Home</a>
+            <a href="{{ url_for('index') }}">Back to Home</a> |
+            <a href="{{ url_for('my_orders') }}">My Orders</a> |
+            <a href="{{ url_for('logout') }}">Logout</a>
         </div>
     </div>
+<script>
+    (function () {
+        var paymentMode = document.getElementById("payment_mode");
+        var paymentReference = document.getElementById("payment_reference");
+        if (!paymentMode || !paymentReference) return;
+
+        function syncPaymentInputs() {
+            var isUpi = paymentMode.value === "upi";
+            paymentReference.required = isUpi;
+            paymentReference.disabled = !isUpi;
+            paymentReference.placeholder = isUpi
+                ? "Enter payment reference after UPI payment"
+                : "Not needed for cash payment";
+            if (!isUpi) {
+                paymentReference.value = "";
+            }
+        }
+
+        paymentMode.addEventListener("change", syncPaymentInputs);
+        syncPaymentInputs();
+    })();
+</script>
 </body>
 </html>
