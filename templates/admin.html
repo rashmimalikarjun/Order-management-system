@@ -90,6 +90,36 @@
     }
     .filter-actions { display: flex; gap: 8px; align-items: center; }
     .summary { margin: 8px 0 16px; font-size: 14px; color: #334155; font-weight: 600; }
+    .qr-panel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .qr-preview {
+      width: 150px;
+      height: 150px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #fff;
+    }
+    .msg {
+      margin: 0 0 10px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
     .table-wrap { overflow-x: auto; }
     table {
       width: 100%;
@@ -153,9 +183,17 @@
       </div>
       <div>
         <a href="{{ url_for('manage_menu') }}" class="btn secondary">Manage Menu Items</a>
+        <a href="{{ url_for('admin_report_csv', range='daily') }}" class="btn secondary">Daily CSV</a>
+        <a href="{{ url_for('admin_report_csv', range='weekly') }}" class="btn secondary">Weekly CSV</a>
+        <a href="{{ url_for('admin_audit_logs') }}" class="btn secondary">Audit Logs</a>
         <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+        <a href="{{ url_for('logout') }}" class="btn ghost">Logout</a>
       </div>
     </div>
+
+    {% if pending_count > 0 %}
+      <div class="msg err" style="margin-bottom:14px;">{{ pending_count }} pending order(s) need attention.</div>
+    {% endif %}
 
     <div class="stats">
       <div class="stat">
@@ -165,6 +203,38 @@
       <div class="stat">
         <div class="label">Total Revenue (Visible)</div>
         <div class="value">INR {{ '%.2f'|format(total_revenue or 0) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pending Orders</div>
+        <div class="value">{{ pending_count }}</div>
+      </div>
+    </div>
+
+    <div class="qr-panel">
+      <h3 style="margin:0 0 10px;">Payment QR</h3>
+      {% if request.args.get('qr_success') %}
+        <p class="msg ok">QR image uploaded successfully.</p>
+      {% endif %}
+      {% if request.args.get('qr_error') == 'missing' %}
+        <p class="msg err">Please choose a QR image file.</p>
+      {% elif request.args.get('qr_error') == 'type' %}
+        <p class="msg err">Invalid file type. Use PNG, JPG, JPEG or WEBP.</p>
+      {% endif %}
+      <div class="qr-grid">
+        <div>
+          {% if qr_image_url %}
+            <img src="{{ qr_image_url }}" alt="Admin QR" class="qr-preview">
+          {% else %}
+            <div class="qr-preview" style="display:flex; align-items:center; justify-content:center; color:#64748b; font-size:12px; text-align:center; padding:8px;">No custom QR uploaded</div>
+          {% endif %}
+        </div>
+        <div>
+          <form method="POST" action="{{ url_for('upload_admin_qr') }}" enctype="multipart/form-data">
+            <label for="qr_image">Upload your QR image</label>
+            <input id="qr_image" name="qr_image" type="file" accept=".png,.jpg,.jpeg,.webp" required>
+            <button type="submit" class="btn" style="margin-top:10px;">Upload QR</button>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -247,10 +317,14 @@
               <td>{{ order.time }}</td>
               <td>{{ order.status_time }}</td>
               <td class="actions">
+                <a href="{{ url_for('admin_order_detail', order_id=order.id) }}">View</a>
                 <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a>
                 <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a>
                 <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a>
                 <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
+                {% if order.payment_method == 'Cash' and order.payment_status != 'Paid' %}
+                  <a href="{{ url_for('mark_cash_paid', order_id=order.id) }}">Mark Cash Paid</a>
+                {% endif %}
               </td>
             </tr>
           {% endfor %}
@@ -259,6 +333,53 @@
     {% else %}
       <div class="empty">No orders available for selected filters.</div>
     {% endif %}
+
+    <div class="qr-panel" style="margin-top:16px;">
+      <h3 style="margin:0 0 10px;">Recent Audit Activity</h3>
+      {% if recent_logs %}
+        <table style="min-width:unset;">
+          <tr>
+            <th>ID</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Details</th>
+            <th>Time</th>
+          </tr>
+          {% for log in recent_logs %}
+            <tr>
+              <td>#{{ log.id }}</td>
+              <td>{{ log.actor_type }}:{{ log.actor_name }}</td>
+              <td>{{ log.action }}</td>
+              <td>{{ log.details or '-' }}</td>
+              <td>{{ log.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <p class="meta">No audit entries yet.</p>
+      {% endif %}
+    </div>
   </div>
+  <script>
+    (function () {
+      var pending = {{ pending_count or 0 }};
+      if (pending <= 0) return;
+      document.title = "(" + pending + ") Pending Orders";
+      try {
+        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.20);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.22);
+      } catch (e) {}
+    })();
+  </script>
 </body>
 </html>
