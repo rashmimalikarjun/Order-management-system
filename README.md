@@ -20,7 +20,7 @@ pip install -r requirements.txt
 2. Set env vars (PowerShell example):
 ```powershell
 $env:SECRET_KEY="change-me"
-$env:ADMIN_USERNAME="admin"
+$env:ADMIN_USERNAME="admin-owner"
 $env:ADMIN_PASSWORD="change-me"
 $env:SESSION_COOKIE_SECURE="0"
 ```
@@ -47,11 +47,12 @@ gunicorn app:app
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 - `SESSION_COOKIE_SECURE=1` (for HTTPS)
+- On Render, attach a persistent disk and set `DATABASE_PATH=/var/data/catering.db`
 
 4. Optional env vars:
 - `UPI_ID`
 - `UPI_NAME`
-- `DATABASE_PATH` (defaults to `catering.db`)
+- `DATABASE_PATH` (local default is `catering.db`; on Render use a persistent disk path)
 - `PORT` (usually injected by host)
 - `FLASK_DEBUG=0`
 
@@ -64,5 +65,7 @@ gunicorn app:app
 
 ## Notes
 
+- The admin login is disabled outside debug mode if `ADMIN_USERNAME=admin` and `ADMIN_PASSWORD=admin123` are still in use.
+- SQLite on Render is not durable unless the database file lives on a persistent disk such as `/var/data/catering.db`.
 - SQLite (`catering.db`) is fine for small/internal usage.
 - For higher traffic or multi-instance deploys, migrate to PostgreSQL/MySQL.
