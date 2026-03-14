@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import sqlite3
 from urllib.parse import urlencode
 from functools import wraps
+from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -26,6 +27,8 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 UPLOAD_FOLDER = os.path.join("static", "uploads", "qr")
 ALLOWED_QR_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
+DISPLAY_DATETIME_FORMAT = "%I:%M %p | %d %b %Y"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -36,15 +39,48 @@ def get_db_connection():
     return conn
 
 
+def current_local_datetime():
+    return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+
+
 def now_string():
-    return datetime.now().strftime("%I:%M %p | %d %b %Y")
+    return current_local_datetime().strftime(DISPLAY_DATETIME_FORMAT)
 
 
 def parse_order_datetime(order_time):
-    try:
-        return datetime.strptime(order_time, "%I:%M %p | %d %b %Y")
-    except (TypeError, ValueError):
+    if not order_time:
         return datetime.min
+
+    try:
+        return datetime.strptime(order_time, DISPLAY_DATETIME_FORMAT)
+    except (TypeError, ValueError):
+        normalized_time = str(order_time).strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized_time)
+        except ValueError:
+            return datetime.min
+
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(APP_TIMEZONE).replace(tzinfo=None)
+        return parsed
+
+
+def format_display_datetime(order_time):
+    parsed = parse_order_datetime(order_time)
+    if parsed == datetime.min:
+        return order_time or ""
+    return parsed.strftime(DISPLAY_DATETIME_FORMAT)
+
+
+def normalize_datetime_fields(row, fields):
+    if row is None:
+        return None
+
+    normalized = dict(row)
+    for field in fields:
+        if field in normalized:
+            normalized[field] = format_display_datetime(normalized.get(field))
+    return normalized
 
 
 def build_upi_link(amount, note):
@@ -697,6 +733,7 @@ def success():
     items = conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", (order_id,)).fetchall()
     conn.close()
 
+    order = normalize_datetime_fields(order, ["time", "status_time"])
     return render_template("success.html", order=order, order_items=items)
 
 
@@ -711,6 +748,7 @@ def my_orders():
     ).fetchall()
     conn.close()
 
+    user_orders = [normalize_datetime_fields(order, ["time", "status_time"]) for order in user_orders]
     return render_template("my_orders.html", orders=user_orders, username=username)
 
 
@@ -743,6 +781,7 @@ def status():
     ).fetchall()
     conn.close()
 
+    user_orders = [normalize_datetime_fields(order, ["time", "status_time"]) for order in user_orders]
     return render_template("status.html", orders=user_orders, username=username)
 
 
@@ -777,6 +816,9 @@ def admin():
     qr_image_url = url_for("static", filename=qr_image_path) if qr_image_path else ""
     recent_logs = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 12").fetchall()
     conn.close()
+
+    orders = [normalize_datetime_fields(order, ["time", "status_time"]) for order in orders]
+    recent_logs = [normalize_datetime_fields(log, ["created_at"]) for log in recent_logs]
 
     from_date_obj = None
     to_date_obj = None
@@ -857,6 +899,8 @@ def admin_order_detail(order_id):
         (f"%order_id={order_id}%",),
     ).fetchall()
     conn.close()
+    order = normalize_datetime_fields(order, ["time", "status_time"])
+    logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
     return render_template("admin_order_detail.html", order=order, order_items=items, logs=logs)
 
 
@@ -865,7 +909,7 @@ def admin_order_detail(order_id):
 def admin_report_csv():
     report_range = (request.args.get("range") or "daily").strip().lower()
     days = 1 if report_range == "daily" else 7
-    start_dt = datetime.now() - timedelta(days=days)
+    start_dt = current_local_datetime() - timedelta(days=days)
 
     conn = get_db_connection()
     orders = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
@@ -904,7 +948,7 @@ def admin_report_csv():
             ]
         )
 
-    filename = f"orders_{report_range}_{datetime.now().strftime('%Y%m%d')}.csv"
+    filename = f"orders_{report_range}_{current_local_datetime().strftime('%Y%m%d')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -918,6 +962,7 @@ def admin_audit_logs():
     conn = get_db_connection()
     logs = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 300").fetchall()
     conn.close()
+    logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
     return render_template("audit_logs.html", logs=logs)
 
 
