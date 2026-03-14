@@ -63,14 +63,21 @@
         {% if error == 'invalid_credentials' %}
             <div class="err">Invalid admin username or password.</div>
         {% endif %}
+        {% if error == 'admin_not_configured' %}
+            <div class="err">Admin login is disabled until secure `ADMIN_USERNAME` and `ADMIN_PASSWORD` env vars are set.</div>
+        {% endif %}
         <form method="POST" action="{{ url_for('login_admin') }}">
             <label for="username">Admin Username</label>
-            <input id="username" name="username" type="text" required>
+            <input id="username" name="username" type="text" required {% if not admin_login_enabled %}disabled{% endif %}>
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" required>
-            <button class="btn" type="submit">Login</button>
+            <input id="password" name="password" type="password" required {% if not admin_login_enabled %}disabled{% endif %}>
+            <button class="btn" type="submit" {% if not admin_login_enabled %}disabled{% endif %}>Login</button>
         </form>
-        <p class="hint">Default credentials: admin / admin123 (change with ADMIN_USERNAME and ADMIN_PASSWORD env vars).</p>
+        {% if admin_login_enabled %}
+            <p class="hint">Use the admin credentials from your environment variables.</p>
+        {% else %}
+            <p class="hint">Set strong `ADMIN_USERNAME` and `ADMIN_PASSWORD` values in Render, then redeploy.</p>
+        {% endif %}
         <div class="nav">
             <a href="{{ url_for('index') }}">Back to Home</a>
         </div>
