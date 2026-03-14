@@ -29,8 +29,38 @@ UPLOAD_FOLDER = os.path.join("static", "uploads", "qr")
 ALLOWED_QR_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 DISPLAY_DATETIME_FORMAT = "%I:%M %p | %d %b %Y"
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "admin123"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
+def running_on_render():
+    return bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"))
+
+
+def admin_uses_default_credentials():
+    return (
+        ADMIN_USERNAME == DEFAULT_ADMIN_USERNAME
+        and ADMIN_PASSWORD == DEFAULT_ADMIN_PASSWORD
+    )
+
+
+def admin_login_enabled():
+    return app.debug or not admin_uses_default_credentials()
+
+
+def log_startup_warnings():
+    if running_on_render() and not os.path.isabs(DATABASE):
+        print(
+            "WARNING: DATABASE_PATH is using a relative path. On Render this is ephemeral. "
+            "Use a persistent disk path like /var/data/catering.db."
+        )
+    if not app.debug and admin_uses_default_credentials():
+        print(
+            "WARNING: Default admin credentials are configured. "
+            "Set ADMIN_USERNAME and ADMIN_PASSWORD before using admin login."
+        )
 
 
 def get_db_connection():
@@ -323,6 +353,7 @@ def init_db():
 
 
 init_db()
+log_startup_warnings()
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -396,7 +427,12 @@ def login_admin():
         return redirect(url_for("admin"))
 
     error = ""
+    login_enabled = admin_login_enabled()
     if request.method == "POST":
+        if not login_enabled:
+            error = "admin_not_configured"
+            return render_template("login_admin.html", error=error, admin_login_enabled=login_enabled)
+
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
@@ -409,7 +445,7 @@ def login_admin():
             return redirect(url_for("admin"))
         error = "invalid_credentials"
 
-    return render_template("login_admin.html", error=error)
+    return render_template("login_admin.html", error=error, admin_login_enabled=login_enabled)
 
 
 @app.route("/reset-password", methods=["GET", "POST"])
