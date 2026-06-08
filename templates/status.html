@@ -67,6 +67,8 @@
                         <br>
                         <strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}
                         <br>
+                        <strong>Contact:</strong> {{ order.contact_number or 'N/A' }}
+                        <br>
                         <strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})
                         <br>
                         <strong>Status:</strong> <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
@@ -74,6 +76,8 @@
                         <small>Ordered: {{ order.time }}</small>
                         <br>
                         <small>Last Updated: {{ order.status_time }}</small>
+                        <br>
+                        <a href="{{ url_for('receipt', order_id=order.id) }}" style="color:#667eea; font-weight:600;">View receipt and timeline</a>
                     </li>
                 {% endfor %}
             </ul>
