@@ -62,7 +62,10 @@
         }
         .item h3 { margin: 0 0 6px; font-size: 18px; }
         .price { color: #065f46; font-weight: 700; margin-bottom: 8px; }
-        input[type="number"], input[type="text"] {
+        label {
+            display: block;
+        }
+        input[type="number"], input[type="text"], input[type="tel"], select {
             width: 100%;
             padding: 9px;
             border: 1px solid #cbd5e1;
@@ -133,9 +136,13 @@
         {% if error == 'empty_cart' %}
             <div class="alert">Your cart is empty. Add at least one menu item.</div>
         {% elif error == 'upi_reference_required' %}
-            <div class="alert">For UPI payment, enter the UPI reference. Or switch payment mode to Cash.</div>
+            <div class="alert">For UPI payment, enter the UPI reference or upload payment proof. Or switch payment mode to Cash.</div>
         {% elif error == 'stock_unavailable' %}
             <div class="alert">Some items are out of stock or quantity is too high. Please review cart quantities.</div>
+        {% elif error == 'contact_required' %}
+            <div class="alert">Enter a valid 10-digit contact number before confirming your order.</div>
+        {% elif error == 'payment_proof_type' %}
+            <div class="alert">Invalid payment proof file. Upload PNG, JPG, JPEG, WEBP or PDF.</div>
         {% endif %}
 
         <div class="layout">
@@ -198,10 +205,12 @@
                     <div class="totals">Grand Total: INR {{ '%.2f'|format(cart_total) }}</div>
 
                     <div class="checkout">
-                        <form method="POST" action="{{ url_for('order') }}">
+                        <form method="POST" action="{{ url_for('order') }}" enctype="multipart/form-data">
                             <p style="margin:0 0 8px;"><strong>Logged in as:</strong> {{ username }}</p>
+                            <label for="contact_number" style="margin-top:10px;"><strong>Contact Number</strong></label>
+                            <input id="contact_number" name="contact_number" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Enter 10-digit phone number" value="{{ contact_number or '' }}" required>
                             <label for="payment_mode" style="margin-top:10px;"><strong>Payment Method</strong></label>
-                            <select id="payment_mode" name="payment_mode" style="width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:8px; margin-top:6px;">
+                            <select id="payment_mode" name="payment_mode">
                                 <option value="upi" {% if payment_mode != 'cash' %}selected{% endif %}>UPI (Pay now)</option>
                                 <option value="cash" {% if payment_mode == 'cash' %}selected{% endif %}>Cash (Pay at delivery/pickup)</option>
                             </select>
@@ -217,6 +226,8 @@
                             </div>
                             <label for="payment_reference" style="margin-top:10px;"><strong>UPI Reference / UTR</strong></label>
                             <input id="payment_reference" name="payment_reference" type="text" placeholder="Enter payment reference if paid now" value="{{ payment_reference or '' }}">
+                            <label for="payment_proof" style="margin-top:10px;"><strong>Payment Proof</strong></label>
+                            <input id="payment_proof" name="payment_proof" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" style="width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:8px; margin-top:6px; background:#fff;">
                             <button type="submit" style="margin-top:10px; width:100%;">Confirm Order</button>
                         </form>
                     </div>
@@ -236,17 +247,31 @@
     (function () {
         var paymentMode = document.getElementById("payment_mode");
         var paymentReference = document.getElementById("payment_reference");
-        if (!paymentMode || !paymentReference) return;
+        var paymentProof = document.getElementById("payment_proof");
+        var contactNumber = document.getElementById("contact_number");
+        if (!paymentMode || !paymentReference || !paymentProof) return;
+
+        if (contactNumber) {
+            contactNumber.addEventListener("input", function () {
+                contactNumber.value = contactNumber.value.replace(/\D/g, "").slice(0, 10);
+            });
+            contactNumber.addEventListener("paste", function () {
+                setTimeout(function () {
+                    contactNumber.value = contactNumber.value.replace(/\D/g, "").slice(0, 10);
+                }, 0);
+            });
+        }
 
         function syncPaymentInputs() {
             var isUpi = paymentMode.value === "upi";
-            paymentReference.required = isUpi;
             paymentReference.disabled = !isUpi;
+            paymentProof.disabled = !isUpi;
             paymentReference.placeholder = isUpi
-                ? "Enter payment reference after UPI payment"
+                ? "Enter reference, or upload proof below"
                 : "Not needed for cash payment";
             if (!isUpi) {
                 paymentReference.value = "";
+                paymentProof.value = "";
             }
         }
 
