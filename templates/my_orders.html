@@ -122,15 +122,20 @@
                 <div class="order-card">
                     <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
                     <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+                    <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
                     <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
                     <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
                     <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+                    {% if order.payment_proof_path %}
+                        <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View proof</a></p>
+                    {% endif %}
                     <p>
                         <strong>Status:</strong> 
                         <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
                     </p>
                     <p><strong>Ordered:</strong> {{ order.time }}</p>
                     <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+                    <p><a href="{{ url_for('receipt', order_id=order.id) }}" style="color:#667eea; font-weight:600;">Receipt / Timeline</a></p>
                     
                     {% if order.status == 'Pending' %}
                         <p style="color: orange;">⏳ Your order is waiting to be prepared</p>
