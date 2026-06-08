@@ -79,11 +79,26 @@
         <div class="card">
             <p><strong>Order ID:</strong> #{{ order.id }}</p>
             <p><strong>Customer:</strong> {{ order.username }}</p>
+            <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
             <p><strong>Status:</strong> <span class="status">{{ order.status }}</span></p>
             <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
             <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+            {% if order.payment_proof_path %}
+                <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View uploaded proof</a></p>
+            {% endif %}
             <p><strong>Order Time:</strong> {{ order.time }}</p>
             <p><strong>Total Quantity:</strong> {{ order.quantity }}</p>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Order Timeline</h3>
+            {% if timeline %}
+                {% for step in timeline %}
+                    <p><strong>{{ step.status }}</strong> - {{ step.changed_at }}{% if step.note %} ({{ step.note }}){% endif %}</p>
+                {% endfor %}
+            {% else %}
+                <p>No timeline entries yet.</p>
+            {% endif %}
         </div>
 
         <div class="card">
@@ -110,6 +125,7 @@
         <div class="actions">
             <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
             <a href="{{ url_for('my_orders') }}" class="btn alt">View My Orders</a>
+            <a href="{{ url_for('receipt', order_id=order.id) }}" class="btn alt">Download Receipt</a>
         </div>
     </div>
 </body>
