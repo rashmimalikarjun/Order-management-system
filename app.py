@@ -26,13 +26,16 @@ UPI_NAME = os.environ.get("UPI_NAME", "Order Management System")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 UPLOAD_FOLDER = os.path.join("static", "uploads", "qr")
+PAYMENT_PROOF_UPLOAD_FOLDER = os.path.join("static", "uploads", "payment_proofs")
 ALLOWED_QR_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+ALLOWED_PAYMENT_PROOF_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "pdf"}
 APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 DISPLAY_DATETIME_FORMAT = "%I:%M %p | %d %b %Y"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin123"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PAYMENT_PROOF_UPLOAD_FOLDER, exist_ok=True)
 
 
 def running_on_render():
@@ -47,7 +50,7 @@ def admin_uses_default_credentials():
 
 
 def admin_login_enabled():
-    return app.debug or not admin_uses_default_credentials()
+    return not (running_on_render() and admin_uses_default_credentials())
 
 
 def log_startup_warnings():
@@ -135,6 +138,28 @@ def allowed_qr_file(filename):
     return ext in ALLOWED_QR_EXTENSIONS
 
 
+def allowed_payment_proof_file(filename):
+    if "." not in filename:
+        return False
+    ext = filename.rsplit(".", 1)[1].lower()
+    return ext in ALLOWED_PAYMENT_PROOF_EXTENSIONS
+
+
+def save_payment_proof(file_storage, order_id):
+    if file_storage is None or not file_storage.filename:
+        return ""
+
+    filename = secure_filename(file_storage.filename)
+    if not allowed_payment_proof_file(filename):
+        return None
+
+    ext = filename.rsplit(".", 1)[1].lower()
+    final_filename = f"payment_proof_order_{order_id}_{int(datetime.now().timestamp())}.{ext}"
+    save_path = os.path.join(PAYMENT_PROOF_UPLOAD_FOLDER, final_filename)
+    file_storage.save(save_path)
+    return os.path.join("uploads", "payment_proofs", final_filename).replace("\\", "/")
+
+
 def get_setting(conn, key, default=""):
     row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default
@@ -148,6 +173,27 @@ def record_audit(conn, actor_type, actor_name, action, details=""):
         """,
         (actor_type, actor_name, action, details, now_string()),
     )
+
+
+def record_status_history(conn, order_id, status, changed_by, note=""):
+    conn.execute(
+        """
+        INSERT INTO order_status_history (order_id, status, changed_at, changed_by, note)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (order_id, status, now_string(), changed_by, note),
+    )
+
+
+def get_order_timeline(conn, order_id):
+    return conn.execute(
+        """
+        SELECT * FROM order_status_history
+        WHERE order_id = ?
+        ORDER BY id ASC
+        """,
+        (order_id,),
+    ).fetchall()
 
 
 def user_logged_in():
@@ -263,6 +309,10 @@ def init_db():
         conn.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'Pending'")
     if "payment_reference" not in order_cols:
         conn.execute("ALTER TABLE orders ADD COLUMN payment_reference TEXT NOT NULL DEFAULT ''")
+    if "contact_number" not in order_cols:
+        conn.execute("ALTER TABLE orders ADD COLUMN contact_number TEXT NOT NULL DEFAULT ''")
+    if "payment_proof_path" not in order_cols:
+        conn.execute("ALTER TABLE orders ADD COLUMN payment_proof_path TEXT NOT NULL DEFAULT ''")
 
     conn.execute(
         """
@@ -291,6 +341,20 @@ def init_db():
             item_price REAL NOT NULL,
             quantity INTEGER NOT NULL,
             subtotal REAL NOT NULL,
+            FOREIGN KEY(order_id) REFERENCES orders(id)
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS order_status_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            changed_at TEXT NOT NULL,
+            changed_by TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
             FOREIGN KEY(order_id) REFERENCES orders(id)
         )
         """
@@ -506,7 +570,12 @@ def order():
         payment_mode = (request.form.get("payment_mode") or "upi").strip().lower()
         if payment_mode not in {"upi", "cash"}:
             payment_mode = "upi"
+        contact_number = "".join(
+            char for char in (request.form.get("contact_number") or "") if char.isdigit()
+        )
         payment_reference = (request.form.get("payment_reference") or "").strip()
+        payment_proof_file = request.files.get("payment_proof")
+        has_payment_proof = bool(payment_proof_file and payment_proof_file.filename)
         cart_items, total_price = get_cart_items(conn)
         upi_link = build_upi_link(total_price, f"Food order by {username or 'customer'}")
         stored_qr_path = get_setting(conn, "admin_qr_path", "")
@@ -523,6 +592,7 @@ def order():
                 cart_count=0,
                 error="empty_cart",
                 username=username,
+                contact_number=contact_number,
                 payment_mode=payment_mode,
                 payment_reference=payment_reference,
                 upi_link=upi_link,
@@ -551,6 +621,7 @@ def order():
                 cart_count=cart_count(get_cart()),
                 error="stock_unavailable",
                 username=username,
+                contact_number=contact_number,
                 payment_mode=payment_mode,
                 payment_reference=payment_reference,
                 upi_link=upi_link,
@@ -559,7 +630,49 @@ def order():
                 upi_name=UPI_NAME,
             )
 
-        if payment_mode == "upi" and not payment_reference:
+        if len(contact_number) != 10:
+            menu_items = conn.execute("SELECT * FROM menu_items WHERE available = 1 ORDER BY id ASC").fetchall()
+            conn.close()
+            return render_template(
+                "order.html",
+                menu_items=menu_items,
+                cart_items=cart_items,
+                cart_total=total_price,
+                cart_count=cart_count(get_cart()),
+                error="contact_required",
+                username=username,
+                contact_number=contact_number,
+                payment_mode=payment_mode,
+                payment_reference=payment_reference,
+                upi_link=upi_link,
+                qr_url=qr_url,
+                upi_id=UPI_ID,
+                upi_name=UPI_NAME,
+            )
+
+        if payment_mode == "upi" and has_payment_proof:
+            filename = secure_filename(payment_proof_file.filename)
+            if not allowed_payment_proof_file(filename):
+                menu_items = conn.execute("SELECT * FROM menu_items WHERE available = 1 ORDER BY id ASC").fetchall()
+                conn.close()
+                return render_template(
+                    "order.html",
+                    menu_items=menu_items,
+                    cart_items=cart_items,
+                    cart_total=total_price,
+                    cart_count=cart_count(get_cart()),
+                    error="payment_proof_type",
+                    username=username,
+                    contact_number=contact_number,
+                    payment_mode=payment_mode,
+                    payment_reference=payment_reference,
+                    upi_link=upi_link,
+                    qr_url=qr_url,
+                    upi_id=UPI_ID,
+                    upi_name=UPI_NAME,
+                )
+
+        if payment_mode == "upi" and not payment_reference and not has_payment_proof:
             menu_items = conn.execute("SELECT * FROM menu_items WHERE available = 1 ORDER BY id ASC").fetchall()
             conn.close()
             return render_template(
@@ -570,6 +683,7 @@ def order():
                 cart_count=cart_count(get_cart()),
                 error="upi_reference_required",
                 username=username,
+                contact_number=contact_number,
                 payment_mode=payment_mode,
                 payment_reference=payment_reference,
                 upi_link=upi_link,
@@ -586,14 +700,20 @@ def order():
             payment_method = "Cash"
             payment_status = "Unpaid"
             payment_reference = ""
+            payment_proof_path = ""
         else:
             payment_method = "UPI QR"
             payment_status = "Paid"
+            payment_proof_path = ""
 
         cursor = conn.execute(
             """
-            INSERT INTO orders (username, menu, quantity, time, status, status_time, total_price, payment_method, payment_status, payment_reference)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO orders (
+                username, menu, quantity, time, status, status_time, total_price,
+                payment_method, payment_status, payment_reference, contact_number,
+                payment_proof_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 username,
@@ -606,9 +726,20 @@ def order():
                 payment_method,
                 payment_status,
                 payment_reference,
+                contact_number,
+                payment_proof_path,
             ),
         )
         order_id = cursor.lastrowid
+
+        if payment_mode == "upi" and has_payment_proof:
+            saved_proof_path = save_payment_proof(payment_proof_file, order_id)
+            if saved_proof_path:
+                payment_proof_path = saved_proof_path
+                conn.execute(
+                    "UPDATE orders SET payment_proof_path = ? WHERE id = ?",
+                    (payment_proof_path, order_id),
+                )
 
         conn.executemany(
             """
@@ -644,6 +775,7 @@ def order():
             "order_placed",
             f"order_id={order_id}, total={total_price:.2f}, payment={payment_method}",
         )
+        record_status_history(conn, order_id, "Pending", username, "Order placed")
 
         conn.commit()
         conn.close()
@@ -667,6 +799,7 @@ def order():
         username=current_username,
         payment_mode="upi",
         payment_reference="",
+        contact_number="",
         upi_link=upi_link,
         qr_url=qr_url,
         upi_id=UPI_ID,
@@ -767,10 +900,31 @@ def success():
         return redirect(url_for("index"))
 
     items = conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", (order_id,)).fetchall()
+    timeline = get_order_timeline(conn, order_id)
     conn.close()
 
     order = normalize_datetime_fields(order, ["time", "status_time"])
-    return render_template("success.html", order=order, order_items=items)
+    timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
+    return render_template("success.html", order=order, order_items=items, timeline=timeline)
+
+
+@app.route("/receipt/<int:order_id>")
+@login_required_user
+def receipt(order_id):
+    conn = get_db_connection()
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    current_user = session.get("last_username", "")
+    if order is None or order["username"] != current_user:
+        conn.close()
+        return redirect(url_for("my_orders"))
+
+    items = conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", (order_id,)).fetchall()
+    timeline = get_order_timeline(conn, order_id)
+    conn.close()
+
+    order = normalize_datetime_fields(order, ["time", "status_time"])
+    timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
+    return render_template("receipt.html", order=order, order_items=items, timeline=timeline)
 
 
 @app.route("/my-orders", methods=["GET"])
@@ -797,6 +951,7 @@ def cancel_order(order_id):
 
     if order and order["username"] == current_user and order["status"] == "Pending":
         conn.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+        conn.execute("DELETE FROM order_status_history WHERE order_id = ?", (order_id,))
         conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
         conn.commit()
         conn.close()
@@ -848,6 +1003,26 @@ def admin():
     conn = get_db_connection()
     orders = conn.execute(sql, params).fetchall()
     pending_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Pending'").fetchone()["c"]
+    preparing_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Preparing'").fetchone()["c"]
+    ready_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Ready'").fetchone()["c"]
+    delivered_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Delivered'").fetchone()["c"]
+    all_orders = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    low_stock_items = conn.execute(
+        """
+        SELECT * FROM menu_items
+        WHERE stock_qty <= 10
+        ORDER BY stock_qty ASC, name ASC
+        """
+    ).fetchall()
+    top_items = conn.execute(
+        """
+        SELECT item_name, SUM(quantity) AS sold_qty, SUM(subtotal) AS revenue
+        FROM order_items
+        GROUP BY item_name
+        ORDER BY sold_qty DESC, revenue DESC
+        LIMIT 5
+        """
+    ).fetchall()
     qr_image_path = get_setting(conn, "admin_qr_path", "")
     qr_image_url = url_for("static", filename=qr_image_path) if qr_image_path else ""
     recent_logs = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 12").fetchall()
@@ -902,6 +1077,19 @@ def admin():
         orders = sorted(orders, key=lambda o: parse_order_datetime(o["time"]), reverse=True)
 
     total_revenue = round(sum(float(order["total_price"] or 0) for order in orders), 2)
+    today = current_local_datetime().date()
+    today_orders = [order for order in all_orders if parse_order_datetime(order["time"]).date() == today]
+    dashboard_stats = {
+        "all_orders": len(all_orders),
+        "today_orders": len(today_orders),
+        "today_revenue": round(sum(float(order["total_price"] or 0) for order in today_orders), 2),
+        "all_revenue": round(sum(float(order["total_price"] or 0) for order in all_orders), 2),
+        "pending": pending_count,
+        "preparing": preparing_count,
+        "ready": ready_count,
+        "delivered": delivered_count,
+        "low_stock": len(low_stock_items),
+    }
     filters = {
         "username": username_query,
         "status": status_query,
@@ -917,6 +1105,9 @@ def admin():
         total_revenue=total_revenue,
         qr_image_url=qr_image_url,
         pending_count=pending_count,
+        dashboard_stats=dashboard_stats,
+        low_stock_items=low_stock_items,
+        top_items=top_items,
         recent_logs=recent_logs,
     )
 
@@ -930,14 +1121,22 @@ def admin_order_detail(order_id):
         conn.close()
         return redirect(url_for("admin"))
     items = conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", (order_id,)).fetchall()
+    timeline = get_order_timeline(conn, order_id)
     logs = conn.execute(
         "SELECT * FROM audit_logs WHERE details LIKE ? ORDER BY id DESC",
         (f"%order_id={order_id}%",),
     ).fetchall()
     conn.close()
     order = normalize_datetime_fields(order, ["time", "status_time"])
+    timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
     logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
-    return render_template("admin_order_detail.html", order=order, order_items=items, logs=logs)
+    return render_template(
+        "admin_order_detail.html",
+        order=order,
+        order_items=items,
+        timeline=timeline,
+        logs=logs,
+    )
 
 
 @app.route("/admin/report.csv")
@@ -963,7 +1162,9 @@ def admin_report_csv():
             "total_price",
             "payment_method",
             "payment_status",
+            "contact_number",
             "status",
+            "payment_proof_path",
             "order_time",
             "last_updated",
         ]
@@ -978,7 +1179,9 @@ def admin_report_csv():
                 f"{float(order['total_price'] or 0):.2f}",
                 order["payment_method"],
                 order["payment_status"],
+                order["contact_number"],
                 order["status"],
+                order["payment_proof_path"],
                 order["time"],
                 order["status_time"],
             ]
@@ -1159,6 +1362,10 @@ def delete_menu(menu_id):
 @app.route("/update_status/<int:order_id>/<status>")
 @login_required_admin
 def update_status(order_id, status):
+    valid_statuses = {"Pending", "Preparing", "Ready", "Delivered"}
+    if status not in valid_statuses:
+        return redirect(url_for("admin"))
+
     conn = get_db_connection()
     status_time = now_string()
     current = conn.execute("SELECT status FROM orders WHERE id = ?", (order_id,)).fetchone()
@@ -1173,6 +1380,8 @@ def update_status(order_id, status):
         "order_status_updated",
         f"order_id={order_id}, from={current['status'] if current else ''}, to={status}",
     )
+    if current and current["status"] != status:
+        record_status_history(conn, order_id, status, ADMIN_USERNAME, "Status updated by admin")
     conn.commit()
     conn.close()
 
