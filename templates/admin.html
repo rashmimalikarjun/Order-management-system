@@ -124,7 +124,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 1060px;
+      min-width: 1180px;
     }
     th, td {
       border-bottom: 1px solid #e2e8f0;
@@ -201,6 +201,14 @@
         <div class="value">{{ orders|length }}</div>
       </div>
       <div class="stat">
+        <div class="label">Today's Orders</div>
+        <div class="value">{{ dashboard_stats.today_orders }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Today's Revenue</div>
+        <div class="value">INR {{ '%.2f'|format(dashboard_stats.today_revenue or 0) }}</div>
+      </div>
+      <div class="stat">
         <div class="label">Total Revenue (Visible)</div>
         <div class="value">INR {{ '%.2f'|format(total_revenue or 0) }}</div>
       </div>
@@ -208,7 +216,57 @@
         <div class="label">Pending Orders</div>
         <div class="value">{{ pending_count }}</div>
       </div>
+      <div class="stat">
+        <div class="label">Preparing / Ready</div>
+        <div class="value">{{ dashboard_stats.preparing }} / {{ dashboard_stats.ready }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Low Stock Items</div>
+        <div class="value">{{ dashboard_stats.low_stock }}</div>
+      </div>
     </div>
+
+    <div class="qr-panel">
+      <h3 style="margin:0 0 10px;">Dashboard Insights</h3>
+      <div class="filter-grid">
+        <div>
+          <strong>All Revenue</strong>
+          <p class="meta">INR {{ '%.2f'|format(dashboard_stats.all_revenue or 0) }} from {{ dashboard_stats.all_orders }} total order(s)</p>
+        </div>
+        <div>
+          <strong>Workflow</strong>
+          <p class="meta">Pending {{ dashboard_stats.pending }} | Preparing {{ dashboard_stats.preparing }} | Ready {{ dashboard_stats.ready }} | Delivered {{ dashboard_stats.delivered }}</p>
+        </div>
+      </div>
+      {% if top_items %}
+        <h4 style="margin:12px 0 8px;">Best-selling Items</h4>
+        <div class="table-wrap">
+          <table style="min-width:unset;">
+            <tr>
+              <th>Item</th>
+              <th>Sold</th>
+              <th>Revenue</th>
+            </tr>
+            {% for item in top_items %}
+              <tr>
+                <td>{{ item.item_name }}</td>
+                <td>{{ item.sold_qty }}</td>
+                <td>INR {{ '%.2f'|format(item.revenue or 0) }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if low_stock_items %}
+      <div class="msg err">
+        Low stock:
+        {% for item in low_stock_items %}
+          {{ item.name }} ({{ item.stock_qty }}){% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
 
     <div class="qr-panel">
       <h3 style="margin:0 0 10px;">Payment QR</h3>
@@ -291,11 +349,13 @@
             <th>S.No</th>
             <th>Order ID</th>
             <th>Username</th>
+            <th>Contact</th>
             <th>Items Summary</th>
             <th>Qty</th>
             <th>Total</th>
             <th>Payment</th>
             <th>Reference</th>
+            <th>Proof</th>
             <th>Status</th>
             <th>Order Time</th>
             <th>Last Updated</th>
@@ -306,11 +366,19 @@
               <td>{{ loop.index }}</td>
               <td>#{{ order.id }}</td>
               <td>{{ order.username }}</td>
+              <td>{{ order.contact_number or '-' }}</td>
               <td>{{ order.menu }}</td>
               <td>{{ order.quantity }}</td>
               <td><strong>INR {{ '%.2f'|format(order.total_price or 0) }}</strong></td>
               <td>{{ order.payment_method }} / {{ order.payment_status }}</td>
               <td>{{ order.payment_reference or '-' }}</td>
+              <td>
+                {% if order.payment_proof_path %}
+                  <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
               <td>
                 <span class="status-pill status-{{ order.status|lower }}">{{ order.status }}</span>
               </td>
