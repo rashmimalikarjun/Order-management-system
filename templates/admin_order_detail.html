@@ -68,11 +68,15 @@
 
         <div class="grid">
             <div class="card">
+                <p><strong>Contact:</strong> {{ order.contact_number or '-' }}</p>
                 <p><strong>Status:</strong> {{ order.status }}</p>
                 <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
                 <p><strong>Quantity:</strong> {{ order.quantity }}</p>
                 <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
                 <p><strong>Reference:</strong> {{ order.payment_reference or '-' }}</p>
+                {% if order.payment_proof_path %}
+                    <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View uploaded proof</a></p>
+                {% endif %}
             </div>
             <div class="card">
                 <p><strong>Ordered:</strong> {{ order.time }}</p>
@@ -98,6 +102,28 @@
                 </tr>
             {% endfor %}
         </table>
+
+        <h3 style="margin-top:16px;">Order Timeline</h3>
+        {% if timeline %}
+            <table>
+                <tr>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Changed By</th>
+                    <th>Note</th>
+                </tr>
+                {% for step in timeline %}
+                    <tr>
+                        <td>{{ step.status }}</td>
+                        <td>{{ step.changed_at }}</td>
+                        <td>{{ step.changed_by }}</td>
+                        <td>{{ step.note or '-' }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>No timeline entries yet.</p>
+        {% endif %}
 
         <h3 style="margin-top:16px;">Audit Trail</h3>
         {% if logs %}
