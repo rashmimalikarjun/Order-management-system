@@ -136,7 +136,7 @@
         {% if error == 'empty_cart' %}
             <div class="alert">Your cart is empty. Add at least one menu item.</div>
         {% elif error == 'upi_reference_required' %}
-            <div class="alert">For UPI payment, enter the UPI reference or upload payment proof. Or switch payment mode to Cash.</div>
+            <div class="alert">For UPI payment, upload payment proof. Or switch payment mode to Cash.</div>
         {% elif error == 'stock_unavailable' %}
             <div class="alert">Some items are out of stock or quantity is too high. Please review cart quantities.</div>
         {% elif error == 'contact_required' %}
@@ -224,8 +224,6 @@
                                     <a href="{{ upi_link }}">Open UPI Payment Link</a>
                                 </p>
                             </div>
-                            <label for="payment_reference" style="margin-top:10px;"><strong>UPI Reference / UTR</strong></label>
-                            <input id="payment_reference" name="payment_reference" type="text" placeholder="Enter payment reference if paid now" value="{{ payment_reference or '' }}">
                             <label for="payment_proof" style="margin-top:10px;"><strong>Payment Proof</strong></label>
                             <input id="payment_proof" name="payment_proof" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" style="width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:8px; margin-top:6px; background:#fff;">
                             <button type="submit" style="margin-top:10px; width:100%;">Confirm Order</button>
@@ -246,10 +244,9 @@
 <script>
     (function () {
         var paymentMode = document.getElementById("payment_mode");
-        var paymentReference = document.getElementById("payment_reference");
         var paymentProof = document.getElementById("payment_proof");
         var contactNumber = document.getElementById("contact_number");
-        if (!paymentMode || !paymentReference || !paymentProof) return;
+        if (!paymentMode || !paymentProof) return;
 
         if (contactNumber) {
             contactNumber.addEventListener("input", function () {
@@ -264,13 +261,8 @@
 
         function syncPaymentInputs() {
             var isUpi = paymentMode.value === "upi";
-            paymentReference.disabled = !isUpi;
             paymentProof.disabled = !isUpi;
-            paymentReference.placeholder = isUpi
-                ? "Enter reference, or upload proof below"
-                : "Not needed for cash payment";
             if (!isUpi) {
-                paymentReference.value = "";
                 paymentProof.value = "";
             }
         }
