@@ -672,7 +672,7 @@ def order():
                     upi_name=UPI_NAME,
                 )
 
-        if payment_mode == "upi" and not payment_reference and not has_payment_proof:
+        if payment_mode == "upi" and not has_payment_proof:
             menu_items = conn.execute("SELECT * FROM menu_items WHERE available = 1 ORDER BY id ASC").fetchall()
             conn.close()
             return render_template(
@@ -1139,6 +1139,39 @@ def admin_order_detail(order_id):
     )
 
 
+@app.route("/admin/order/<int:order_id>/kitchen-ticket")
+@login_required_admin
+def kitchen_ticket(order_id):
+    conn = get_db_connection()
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        conn.close()
+        return redirect(url_for("admin"))
+
+    items = conn.execute(
+        "SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC",
+        (order_id,),
+    ).fetchall()
+    latest_note = conn.execute(
+        """
+        SELECT note FROM order_status_history
+        WHERE order_id = ? AND note != ''
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (order_id,),
+    ).fetchone()
+    conn.close()
+
+    order = normalize_datetime_fields(order, ["time", "status_time"])
+    return render_template(
+        "kitchen_ticket.html",
+        order=order,
+        order_items=items,
+        kitchen_note=latest_note["note"] if latest_note else "",
+    )
+
+
 @app.route("/admin/report.csv")
 @login_required_admin
 def admin_report_csv():
@@ -1253,9 +1286,6 @@ def add_menu():
     if not name or not price or stock_qty_raw is None:
         return redirect(url_for("manage_menu") + "?error=invalid")
 
-    if not emoji:
-        emoji = "ITEM"
-
     menu_id = None
     if menu_id_raw:
         try:
@@ -1305,9 +1335,6 @@ def edit_menu(menu_id):
 
     if not name or not price or stock_qty_raw is None:
         return redirect(url_for("manage_menu") + "?error=invalid")
-
-    if not emoji:
-        emoji = "ITEM"
 
     try:
         price_value = float(price)
