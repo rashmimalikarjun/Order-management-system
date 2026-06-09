@@ -140,6 +140,7 @@
       text-transform: uppercase;
       letter-spacing: 0.4px;
     }
+    th.actions-col { text-align: center; width: 190px; }
     .status-pill {
       padding: 4px 10px;
       border-radius: 999px;
@@ -151,20 +152,50 @@
     .status-preparing { background: #dbeafe; color: #1e3a8a; }
     .status-ready { background: #dcfce7; color: #166534; }
     .status-delivered { background: #ede9fe; color: #5b21b6; }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(74px, 1fr));
+      gap: 6px;
+      min-width: 176px;
+    }
     .actions a {
       text-decoration: none;
-      margin-right: 6px;
-      margin-bottom: 6px;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
       border: 1px solid #cbd5e1;
       color: #1e293b;
       border-radius: 6px;
-      padding: 5px 8px;
+      padding: 6px 8px;
       font-size: 12px;
       font-weight: 600;
       background: #fff;
+      line-height: 1.15;
+      text-align: center;
+      white-space: nowrap;
     }
     .actions a:hover { border-color: #2563eb; color: #2563eb; }
+    .actions .detail-link {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+    .actions .ticket-link {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+      color: #0f766e;
+    }
+    .actions .status-link {
+      background: #f8fafc;
+      color: #334155;
+    }
+    .actions .cash-link {
+      grid-column: 1 / -1;
+      background: #fef3c7;
+      border-color: #fde68a;
+      color: #92400e;
+    }
     .empty {
       padding: 20px;
       border: 1px dashed #cbd5e1;
@@ -354,12 +385,11 @@
             <th>Qty</th>
             <th>Total</th>
             <th>Payment</th>
-            <th>Reference</th>
             <th>Proof</th>
             <th>Status</th>
             <th>Order Time</th>
             <th>Last Updated</th>
-            <th>Actions</th>
+            <th class="actions-col">Actions</th>
           </tr>
           {% for order in orders %}
             <tr>
@@ -371,7 +401,6 @@
               <td>{{ order.quantity }}</td>
               <td><strong>INR {{ '%.2f'|format(order.total_price or 0) }}</strong></td>
               <td>{{ order.payment_method }} / {{ order.payment_status }}</td>
-              <td>{{ order.payment_reference or '-' }}</td>
               <td>
                 {% if order.payment_proof_path %}
                   <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View</a>
@@ -385,13 +414,14 @@
               <td>{{ order.time }}</td>
               <td>{{ order.status_time }}</td>
               <td class="actions">
-                <a href="{{ url_for('admin_order_detail', order_id=order.id) }}">View</a>
-                <a href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a>
-                <a href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a>
-                <a href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a>
-                <a href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
+                <a class="detail-link" href="{{ url_for('admin_order_detail', order_id=order.id) }}">View</a>
+                <a class="ticket-link" href="{{ url_for('kitchen_ticket', order_id=order.id) }}" target="_blank">Ticket</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
                 {% if order.payment_method == 'Cash' and order.payment_status != 'Paid' %}
-                  <a href="{{ url_for('mark_cash_paid', order_id=order.id) }}">Mark Cash Paid</a>
+                  <a class="cash-link" href="{{ url_for('mark_cash_paid', order_id=order.id) }}">Mark Cash Paid</a>
                 {% endif %}
               </td>
             </tr>
