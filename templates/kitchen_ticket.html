@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Ticket #{{ order.id }}</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: #e5e7eb;
+            color: #111827;
+            padding: 24px;
+        }
+        .toolbar {
+            max-width: 420px;
+            margin: 0 auto 12px;
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 700;
+            padding: 9px 12px;
+            text-decoration: none;
+        }
+        .btn.secondary { background: #334155; }
+        .ticket {
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid #111827;
+            padding: 16px;
+        }
+        .ticket-header {
+            border-bottom: 2px solid #111827;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0;
+            letter-spacing: 0;
+        }
+        .status {
+            border: 1px solid #111827;
+            display: inline-block;
+            font-size: 13px;
+            font-weight: 800;
+            margin-top: 8px;
+            padding: 4px 10px;
+            text-transform: uppercase;
+        }
+        .meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 12px;
+            font-size: 13px;
+            margin: 10px 0;
+        }
+        .meta div { min-width: 0; }
+        .label {
+            color: #4b5563;
+            display: block;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 10px;
+        }
+        th, td {
+            border-bottom: 1px solid #d1d5db;
+            padding: 8px 4px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        td { font-size: 15px; }
+        .qty {
+            font-size: 20px;
+            font-weight: 900;
+            text-align: center;
+            width: 54px;
+        }
+        .total {
+            border-top: 2px solid #111827;
+            font-size: 18px;
+            font-weight: 900;
+            margin-top: 12px;
+            padding-top: 10px;
+            text-align: right;
+        }
+        .notes {
+            border: 1px dashed #6b7280;
+            margin-top: 12px;
+            min-height: 56px;
+            padding: 8px;
+        }
+        .notes p {
+            margin: 4px 0 0;
+            white-space: pre-wrap;
+        }
+        @media print {
+            body {
+                background: #fff;
+                padding: 0;
+            }
+            .toolbar { display: none; }
+            .ticket {
+                border: none;
+                max-width: none;
+                width: 80mm;
+                margin: 0;
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <a class="btn secondary" href="{{ url_for('admin_order_detail', order_id=order.id) }}">Back</a>
+        <button class="btn" type="button" onclick="window.print()">Print Ticket</button>
+    </div>
+
+    <main class="ticket">
+        <div class="ticket-header">
+            <h1>Kitchen Ticket</h1>
+            <div class="status">{{ order.status }}</div>
+        </div>
+
+        <div class="meta">
+            <div>
+                <span class="label">Order</span>
+                #{{ order.id }}
+            </div>
+            <div>
+                <span class="label">Total Qty</span>
+                {{ order.quantity }}
+            </div>
+            <div>
+                <span class="label">Customer</span>
+                {{ order.username }}
+            </div>
+            <div>
+                <span class="label">Contact</span>
+                {{ order.contact_number or '-' }}
+            </div>
+            <div>
+                <span class="label">Ordered</span>
+                {{ order.time }}
+            </div>
+            <div>
+                <span class="label">Payment</span>
+                {{ order.payment_method }} / {{ order.payment_status }}
+            </div>
+        </div>
+
+        <table>
+            <tr>
+                <th>Item</th>
+                <th class="qty">Qty</th>
+            </tr>
+            {% for item in order_items %}
+                <tr>
+                    <td>{{ item.item_name }}</td>
+                    <td class="qty">{{ item.quantity }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+
+        <div class="notes">
+            <span class="label">Notes</span>
+            <p>{{ kitchen_note or '-' }}</p>
+        </div>
+
+        <div class="total">INR {{ '%.2f'|format(order.total_price or 0) }}</div>
+    </main>
+</body>
+</html>
