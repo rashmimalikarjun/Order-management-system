@@ -125,7 +125,6 @@
                     <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
                     <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
                     <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
-                    <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
                     {% if order.payment_proof_path %}
                         <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View proof</a></p>
                     {% endif %}
