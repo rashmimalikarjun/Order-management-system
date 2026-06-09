@@ -104,14 +104,14 @@
         {% elif request.args.get('error') == 'duplicate' %}
             <div class="alert-error">Duplicate item name or ID already exists.</div>
         {% elif request.args.get('error') == 'invalid' %}
-            <div class="alert-error">Invalid input. Check ID, name, emoji and price.</div>
+            <div class="alert-error">Invalid input. Check ID, name, price and stock.</div>
         {% endif %}
 
         <div class="add-form">
             <h3>Add New Menu Item</h3>
             <form method="POST" action="{{ url_for('add_menu') }}">
                 <input type="number" name="menu_id" placeholder="Custom ID (Optional)" min="1" style="width: 190px;">
-                <input type="text" name="emoji" placeholder="Emoji (e.g., ??)" required style="width: 130px;">
+                <input type="text" name="emoji" placeholder="Emoji (optional)" style="width: 130px;">
                 <input type="text" name="name" placeholder="Item Name" required style="width: 290px;">
                 <input type="number" name="price" placeholder="Price" step="0.01" min="0" required style="width: 150px;">
                 <input type="number" name="stock_qty" placeholder="Stock Qty" min="0" required style="width: 150px;">
@@ -177,7 +177,7 @@
         <div style="background:white; max-width:500px; margin:100px auto; padding:30px; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
             <h3 style="margin-bottom: 16px;">Edit Menu Item</h3>
             <form method="POST" id="editForm">
-                <input type="text" id="editEmoji" name="emoji" placeholder="Emoji" required style="width:100%; margin:10px 0;">
+                <input type="text" id="editEmoji" name="emoji" placeholder="Emoji (optional)" style="width:100%; margin:10px 0;">
                 <input type="text" id="editName" name="name" placeholder="Item Name" required style="width:100%; margin:10px 0;">
                 <input type="number" id="editPrice" name="price" placeholder="Price" step="0.01" min="0" required style="width:100%; margin:10px 0;">
                 <input type="number" id="editStockQty" name="stock_qty" placeholder="Stock Qty" min="0" required style="width:100%; margin:10px 0;">
