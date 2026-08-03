@@ -1,7 +1,8 @@
 import os
 import csv
 import io
-from flask import Flask, render_template, request, redirect, url_for, session, Response
+from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
+from flask_cors import CORS
 from datetime import datetime, timedelta
 import sqlite3
 from urllib.parse import urlencode
@@ -11,6 +12,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+CORS(app)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-insecure-secret-change-me")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -1435,7 +1437,159 @@ def mark_cash_paid(order_id):
     conn.close()
     return redirect(url_for("admin"))
 
+# ==========================================
+# WEBSITE CONTENT (CMS) - HERO SECTION
+# ==========================================
 
+def init_content_db():
+    """Initialize website content table"""
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS website_content (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section TEXT NOT NULL,
+            field_key TEXT NOT NULL,
+            field_value TEXT NOT NULL,
+            field_type TEXT DEFAULT 'text',
+            updated_at TEXT NOT NULL,
+            UNIQUE(section, field_key)
+        )
+    ''')
+    
+    # Insert default Hero content if empty
+    existing = conn.execute("SELECT COUNT(*) as c FROM website_content WHERE section='hero'").fetchone()
+    if existing["c"] == 0:
+        default_hero = [
+            ("hero", "badge_text", "ISO 22000:2018 Certified Facilities", "text"),
+            ("hero", "title_line1", "Quality Food.", "text"),
+            ("hero", "title_line2", "Trusted Service.", "text"),
+            ("hero", "description", "Providing hygienic, highly structured, and professionally managed food services for corporate workplaces, IT hubs, and multi-tenant business parks across Bengaluru.", "textarea"),
+            ("hero", "btn1_text", "Explore Services", "text"),
+            ("hero", "btn1_link", "#services", "text"),
+            ("hero", "btn2_text", "Request a Quote", "text"),
+            ("hero", "btn2_link", "#contact", "text"),
+            ("hero", "stat1_number", "45+", "text"),
+            ("hero", "stat1_label", "Tech Parks Managed", "text"),
+            ("hero", "stat2_number", "25k+", "text"),
+            ("hero", "stat2_label", "Daily Active Portions", "text"),
+            ("hero", "bg_image", "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=1920&q=80", "image"),
+            ("hero", "scroll_text", "Scroll to Discover", "text"),
+        ]
+        now = now_string()
+        conn.executemany(
+            "INSERT INTO website_content (section, field_key, field_value, field_type, updated_at) VALUES (?, ?, ?, ?, ?)",
+            [(s, k, v, t, now) for s, k, v, t in default_hero]
+        )
+    conn.commit()
+    conn.close()
+
+# Call this on startup
+init_content_db()
+
+
+# ==========================================
+# CMS API ROUTES
+# ==========================================
+
+# Get all content for a section (used by React)
+@app.route("/api/content/<section>", methods=["GET"])
+def api_get_section_content(section):
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT field_key, field_value, field_type FROM website_content WHERE section = ?",
+        (section,)
+    ).fetchall()
+    conn.close()
+    
+    # Convert to easy dictionary: { "title_line1": "Quality Food.", ... }
+    content = {row["field_key"]: row["field_value"] for row in rows}
+    
+    return jsonify({
+        "success": True,
+        "section": section,
+        "content": content
+    })
+
+
+# Get ALL content (used by admin panel)
+@app.route("/api/content", methods=["GET"])
+def api_get_all_content():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM website_content ORDER BY section, id").fetchall()
+    conn.close()
+    
+    content = [dict(row) for row in rows]
+    return jsonify({"success": True, "content": content})
+
+
+# Update content (admin only)
+@app.route("/api/content/update", methods=["POST"])
+@login_required_admin
+def api_update_content():
+    data = request.json
+    section = data.get("section")
+    field_key = data.get("field_key")
+    field_value = data.get("field_value")
+    
+    if not section or not field_key:
+        return jsonify({"success": False, "error": "Missing fields"}), 400
+    
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE website_content SET field_value = ?, updated_at = ? WHERE section = ? AND field_key = ?",
+        (field_value, now_string(), section, field_key)
+    )
+    record_audit(conn, "admin", ADMIN_USERNAME, "content_updated", f"section={section}, field={field_key}")
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"success": True, "message": "Content updated"})
+
+
+# ==========================================
+# ADMIN CMS PAGE
+# ==========================================
+
+@app.route("/admin/content", methods=["GET"])
+@login_required_admin
+def admin_content():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM website_content ORDER BY section, id").fetchall()
+    conn.close()
+    
+    # Group by section
+    sections = {}
+    for row in rows:
+        section = row["section"]
+        if section not in sections:
+            sections[section] = []
+        sections[section].append(dict(row))
+    
+    return render_template("admin_content.html", sections=sections)
+
+
+# Handle admin form submission
+@app.route("/admin/content/save", methods=["POST"])
+@login_required_admin
+def admin_content_save():
+    conn = get_db_connection()
+    now = now_string()
+    
+    # Loop through all submitted fields
+    for key, value in request.form.items():
+        # Field name format: "hero__title_line1"
+        if "__" in key:
+            section, field_key = key.split("__", 1)
+            conn.execute(
+                "UPDATE website_content SET field_value = ?, updated_at = ? WHERE section = ? AND field_key = ?",
+                (value, now, section, field_key)
+            )
+    
+    record_audit(conn, "admin", ADMIN_USERNAME, "content_bulk_updated", "Website content updated")
+    conn.commit()
+    conn.close()
+    
+    return redirect(url_for("admin_content") + "?saved=1")
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
