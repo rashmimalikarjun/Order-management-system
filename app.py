@@ -1,6 +1,7 @@
 import os
 import csv
 import io
+import json
 from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -35,6 +36,9 @@ APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 DISPLAY_DATETIME_FORMAT = "%I:%M %p | %d %b %Y"
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_PASSWORD = "admin123"
+FINANCIAL_CASE_STATUSES = ("Open", "Investigating", "Escalated", "Resolved", "Closed")
+FINANCIAL_CASE_CLOSED_STATUSES = {"Resolved", "Closed"}
+FINANCIAL_RISK_TIERS = ("Unscored", "Low", "Medium", "High", "Critical")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PAYMENT_PROOF_UPLOAD_FOLDER, exist_ok=True)
@@ -196,6 +200,460 @@ def get_order_timeline(conn, order_id):
         """,
         (order_id,),
     ).fetchall()
+
+
+def normalize_financial_choice(value, allowed_values, default_value):
+    value = (value or "").strip()
+    return value if value in allowed_values else default_value
+
+
+def parse_percentage(value, default=0.0):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(100.0, parsed))
+
+
+def normalize_follow_up_datetime(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+
+    try:
+        return datetime.fromisoformat(value).strftime(DISPLAY_DATETIME_FORMAT)
+    except ValueError:
+        return value
+
+
+def row_to_dict(row):
+    return dict(row) if row is not None else {}
+
+
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def get_finance_order_items(conn, order):
+    order_data = row_to_dict(order)
+    if not order_data.get("id"):
+        return []
+
+    order_items = conn.execute(
+        "SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC",
+        (order_data["id"],),
+    ).fetchall()
+    if order_items:
+        return [
+            {
+                **dict(item),
+                "source": "order_items",
+                "is_legacy_fallback": False,
+                "has_reliable_price": True,
+                "pricing_note": "",
+            }
+            for item in order_items
+        ]
+
+    menu_summary = (order_data.get("menu") or "").strip()
+    quantity = safe_int(order_data.get("quantity"), 0)
+    if not menu_summary and quantity <= 0:
+        return []
+
+    return [
+        {
+            "id": None,
+            "order_id": order_data["id"],
+            "menu_item_id": None,
+            "item_name": menu_summary or "Legacy order summary",
+            "item_price": None,
+            "quantity": quantity,
+            "subtotal": None,
+            "source": "legacy_order_fields",
+            "is_legacy_fallback": True,
+            "has_reliable_price": False,
+            "pricing_note": "Legacy order row has menu/quantity but no item-level price.",
+        }
+    ]
+
+
+def summarize_finance_order_items(items):
+    return {
+        "count": len(items),
+        "source": items[0]["source"] if items else "none",
+        "has_live_order_items": any(not item.get("is_legacy_fallback") for item in items),
+        "uses_legacy_fallback": any(item.get("is_legacy_fallback") for item in items),
+        "has_reliable_line_prices": any(item.get("has_reliable_price") for item in items),
+    }
+
+
+def get_payment_analysis(order, items):
+    order_data = row_to_dict(order)
+    expected_amount = round(safe_float(order_data.get("total_price")), 2)
+    payment_status = order_data.get("payment_status") or ""
+    expected_amount_recorded = expected_amount > 0
+    received_amount = expected_amount if payment_status == "Paid" and expected_amount_recorded else 0.0
+    shortfall_amount = round(max(0.0, expected_amount - received_amount), 2)
+    item_summary = summarize_finance_order_items(items)
+
+    return {
+        "expected_amount": expected_amount,
+        "expected_amount_recorded": expected_amount_recorded,
+        "received_amount": received_amount,
+        "shortfall_amount": shortfall_amount,
+        "payment_status": payment_status,
+        "payment_method": order_data.get("payment_method") or "",
+        "payment_reference": order_data.get("payment_reference") or "",
+        "payment_proof_path": order_data.get("payment_proof_path") or "",
+        "financial_data_incomplete": not expected_amount_recorded
+        or item_summary["uses_legacy_fallback"]
+        or not items,
+        "zero_amount_note": (
+            "total_price is recorded as 0; this is not treated as a verified zero-rupee order."
+            if not expected_amount_recorded
+            else ""
+        ),
+    }
+
+
+def build_financial_case_evidence_snapshot(conn, order_id):
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if order is None:
+        return None
+
+    finance_items = get_finance_order_items(conn, order)
+    item_summary = summarize_finance_order_items(finance_items)
+    payment_analysis = get_payment_analysis(order, finance_items)
+    timeline = get_order_timeline(conn, order_id)
+    audit_logs = conn.execute(
+        "SELECT * FROM audit_logs WHERE details LIKE ? ORDER BY id DESC LIMIT 25",
+        (f"%order_id={order_id}%",),
+    ).fetchall()
+
+    order_data = dict(order)
+    payment_status = order_data.get("payment_status") or ""
+
+    return {
+        "phase": "Phase 1 foundation",
+        "captured_at": now_string(),
+        "order": {
+            "id": order_data.get("id"),
+            "username": order_data.get("username"),
+            "contact_number": order_data.get("contact_number"),
+            "menu": order_data.get("menu"),
+            "quantity": order_data.get("quantity"),
+            "status": order_data.get("status"),
+            "time": order_data.get("time"),
+            "status_time": order_data.get("status_time"),
+        },
+        "payment": {
+            "total_price": payment_analysis["expected_amount"],
+            "payment_method": order_data.get("payment_method"),
+            "payment_status": payment_status,
+            "payment_reference": order_data.get("payment_reference"),
+            "payment_proof_path": order_data.get("payment_proof_path"),
+            "expected_amount_recorded": payment_analysis["expected_amount_recorded"],
+            "zero_amount_note": payment_analysis["zero_amount_note"],
+        },
+        "shortfall": {
+            "expected_amount": payment_analysis["expected_amount"],
+            "received_amount": payment_analysis["received_amount"],
+            "estimated_shortfall": payment_analysis["shortfall_amount"],
+            "needs_review": payment_analysis["shortfall_amount"] > 0
+            or payment_analysis["financial_data_incomplete"],
+            "basis": "Existing OMS order/payment fields only; no AI or external payment reconciliation has run.",
+        },
+        "item_summary": item_summary,
+        "items": finance_items,
+        "order_items": [
+            item for item in finance_items if not item.get("is_legacy_fallback")
+        ],
+        "legacy_items": [
+            item for item in finance_items if item.get("is_legacy_fallback")
+        ],
+        "order_status_history": [dict(item) for item in timeline],
+        "audit_logs": [dict(log) for log in audit_logs],
+    }
+
+
+def capture_financial_case_evidence(conn, case_id, order_id, evidence_type="order_snapshot"):
+    snapshot = build_financial_case_evidence_snapshot(conn, order_id)
+    if snapshot is None:
+        return False
+
+    conn.execute(
+        """
+        INSERT INTO case_evidence (case_id, evidence_type, evidence_snapshot, captured_at)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            evidence_type,
+            json.dumps(snapshot, indent=2, sort_keys=True),
+            now_string(),
+        ),
+    )
+    return True
+
+
+def risk_tier_from_score(score):
+    if score >= 90:
+        return "Critical"
+    if score >= 65:
+        return "High"
+    if score >= 35:
+        return "Medium"
+    return "Low"
+
+
+def evaluate_financial_case(order, finance_items, evidence_rows):
+    order_data = row_to_dict(order)
+    if not order_data:
+        return {
+            "analysis_source": "deterministic_v1",
+            "risk_tier": "Unscored",
+            "risk_score": 0.0,
+            "confidence": 0.0,
+            "hypothesis": "No linked OMS order was available for analysis.",
+            "chosen_action": "Review the financial case linkage before continuing.",
+            "rejected_alternatives": "LLM reasoning not invoked; no valid order context was available.",
+        }
+
+    item_summary = summarize_finance_order_items(finance_items)
+    payment_analysis = get_payment_analysis(order, finance_items)
+    order_status = order_data.get("status") or ""
+    payment_status = order_data.get("payment_status") or ""
+    delivered = order_status == "Delivered"
+    paid = payment_status == "Paid"
+    non_paid = payment_status != "Paid"
+    expected_amount = payment_analysis["expected_amount"]
+    expected_recorded = payment_analysis["expected_amount_recorded"]
+    has_payment_reference = bool(payment_analysis["payment_reference"])
+    has_payment_proof = bool(payment_analysis["payment_proof_path"])
+    evidence_count = len(evidence_rows)
+
+    if paid:
+        score = 8.0
+        confidence = 90.0 if expected_recorded else 65.0
+        hypothesis = "The linked OMS order is marked Paid."
+        chosen_action = "No finance shortfall action is needed unless payment proof or reconciliation is disputed."
+    elif delivered and non_paid and expected_recorded:
+        score = 84.0
+        confidence = 85.0
+        hypothesis = (
+            f"Delivered order remains {payment_status} with a recorded expected amount of "
+            f"INR {expected_amount:.2f}."
+        )
+        chosen_action = "Verify payment evidence, contact the customer, and escalate if the shortfall remains unresolved."
+    elif delivered and non_paid:
+        score = 70.0
+        confidence = 55.0
+        hypothesis = (
+            f"Delivered order remains {payment_status}, but the expected amount is not reliably recorded. "
+            "Legacy menu/quantity data may identify what was ordered, but it does not prove the amount owed."
+        )
+        chosen_action = "Confirm the expected amount from source records, then follow up on the unpaid delivered order."
+    elif non_paid and expected_recorded:
+        score = 42.0
+        confidence = 72.0
+        hypothesis = (
+            f"Order is not yet delivered and payment is {payment_status}; a recorded amount exists."
+        )
+        chosen_action = "Monitor until delivery or payment confirmation before escalating."
+    elif non_paid:
+        score = 36.0
+        confidence = 45.0
+        hypothesis = (
+            f"Order payment is {payment_status}, but financial data is incomplete."
+        )
+        chosen_action = "Review the order record and capture missing payment/amount evidence."
+    else:
+        score = 15.0
+        confidence = 55.0
+        hypothesis = "The order does not currently match a delivered unpaid shortfall pattern."
+        chosen_action = "Keep the case open only if there is external evidence of a shortfall."
+
+    if delivered and non_paid and not has_payment_reference and not has_payment_proof:
+        score += 5.0
+    if item_summary["uses_legacy_fallback"]:
+        confidence -= 10.0
+    if not item_summary["has_live_order_items"]:
+        confidence -= 5.0
+    if not expected_recorded:
+        confidence -= 10.0
+    if evidence_count == 0:
+        confidence -= 10.0
+
+    score = parse_percentage(score)
+    confidence = parse_percentage(confidence)
+    financial_notes = []
+    if item_summary["uses_legacy_fallback"]:
+        financial_notes.append("legacy_order_fields_used")
+    if not expected_recorded:
+        financial_notes.append("expected_amount_not_recorded")
+    if not has_payment_reference:
+        financial_notes.append("payment_reference_missing")
+    if not has_payment_proof:
+        financial_notes.append("payment_proof_missing")
+
+    return {
+        "analysis_source": "deterministic_v1",
+        "risk_tier": risk_tier_from_score(score),
+        "risk_score": score,
+        "confidence": confidence,
+        "hypothesis": hypothesis,
+        "chosen_action": chosen_action,
+        "rejected_alternatives": (
+            "LLM reasoning not invoked; deterministic analysis used. "
+            f"Evidence flags: {', '.join(financial_notes) if financial_notes else 'none'}."
+        ),
+    }
+
+
+def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
+    created_at = now_string()
+    case_id = case["id"]
+    conn.execute(
+        """
+        UPDATE financial_case
+        SET risk_tier = ?,
+            risk_score = ?,
+            confidence = ?,
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            result["risk_tier"],
+            result["risk_score"],
+            result["confidence"],
+            created_at,
+            case_id,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_reasoning (
+            case_id, hypothesis, risk_score, confidence,
+            chosen_action, rejected_alternatives, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            result["hypothesis"],
+            result["risk_score"],
+            result["confidence"],
+            result["chosen_action"],
+            result["rejected_alternatives"],
+            created_at,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            "analysis_run",
+            initiated_by,
+            (
+                f"{result['analysis_source']} via {trigger}: "
+                f"{result['risk_tier']} ({result['risk_score']:.1f}, "
+                f"confidence {result['confidence']:.1f})"
+            ),
+            created_at,
+        ),
+    )
+    record_audit(
+        conn,
+        "admin",
+        initiated_by,
+        "financial_case_analysis_run",
+        (
+            f"financial_case_id={case_id}, order_id={case['order_id']}, "
+            f"source={result['analysis_source']}, trigger={trigger}, "
+            f"risk_tier={result['risk_tier']}"
+        ),
+    )
+
+
+def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="manual"):
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return None
+
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (case["order_id"],)).fetchone()
+    finance_items = get_finance_order_items(conn, order)
+    evidence_rows = conn.execute(
+        "SELECT * FROM case_evidence WHERE case_id = ? ORDER BY id DESC",
+        (case_id,),
+    ).fetchall()
+    result = evaluate_financial_case(order, finance_items, evidence_rows)
+    save_financial_case_analysis(conn, case, result, initiated_by, trigger)
+    return result
+
+
+def create_financial_case_for_order(conn, order_id, initiated_by):
+    order = conn.execute("SELECT id FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if order is None:
+        return None, "order_not_found"
+
+    existing = conn.execute(
+        "SELECT id FROM financial_case WHERE order_id = ?",
+        (order_id,),
+    ).fetchone()
+    if existing:
+        return existing["id"], "already_exists"
+
+    created_at = now_string()
+    cursor = conn.execute(
+        """
+        INSERT INTO financial_case (
+            order_id, status, risk_tier, risk_score, confidence,
+            created_at, updated_at, resolved_at, follow_up_due_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            order_id,
+            "Open",
+            "Unscored",
+            0.0,
+            0.0,
+            created_at,
+            created_at,
+            "",
+            "",
+        ),
+    )
+    case_id = cursor.lastrowid
+    capture_financial_case_evidence(conn, case_id, order_id, "initial_order_snapshot")
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            "case_created",
+            initiated_by,
+            "Financial case opened for existing OMS order.",
+            created_at,
+        ),
+    )
+    analyze_financial_case(conn, case_id, initiated_by, "case_creation")
+    return case_id, "created"
 
 
 def user_logged_in():
@@ -385,6 +843,69 @@ def init_db():
         )
         """
     )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS financial_case (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'Open',
+            risk_tier TEXT NOT NULL DEFAULT 'Unscored',
+            risk_score REAL NOT NULL DEFAULT 0,
+            confidence REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT NOT NULL DEFAULT '',
+            follow_up_due_at TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(order_id) REFERENCES orders(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS case_evidence (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER NOT NULL,
+            evidence_type TEXT NOT NULL DEFAULT 'order_snapshot',
+            evidence_snapshot TEXT NOT NULL,
+            captured_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES financial_case(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS case_reasoning (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER NOT NULL,
+            hypothesis TEXT NOT NULL DEFAULT '',
+            risk_score REAL NOT NULL DEFAULT 0,
+            confidence REAL NOT NULL DEFAULT 0,
+            chosen_action TEXT NOT NULL DEFAULT '',
+            rejected_alternatives TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES financial_case(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS case_action (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL,
+            initiated_by TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES financial_case(id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_case_status ON financial_case(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_case_order ON financial_case(order_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_case_evidence_case ON case_evidence(case_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_case_reasoning_case ON case_reasoning(case_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_case_action_case ON case_action(case_id)")
 
     conn.execute(
         """
@@ -1008,6 +1529,20 @@ def admin():
     preparing_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Preparing'").fetchone()["c"]
     ready_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Ready'").fetchone()["c"]
     delivered_count = conn.execute("SELECT COUNT(*) AS c FROM orders WHERE status = 'Delivered'").fetchone()["c"]
+    finance_open_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM financial_case WHERE status NOT IN ('Resolved', 'Closed')"
+    ).fetchone()["c"]
+    finance_candidate_count = conn.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM orders o
+        LEFT JOIN financial_case fc ON fc.order_id = o.id
+        WHERE o.status = 'Delivered'
+          AND o.payment_status != 'Paid'
+          AND COALESCE(o.total_price, 0) > 0
+          AND fc.id IS NULL
+        """
+    ).fetchone()["c"]
     all_orders = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
     low_stock_items = conn.execute(
         """
@@ -1091,6 +1626,8 @@ def admin():
         "ready": ready_count,
         "delivered": delivered_count,
         "low_stock": len(low_stock_items),
+        "finance_open": finance_open_count,
+        "finance_candidates": finance_candidate_count,
     }
     filters = {
         "username": username_query,
@@ -1124,6 +1661,10 @@ def admin_order_detail(order_id):
         return redirect(url_for("admin"))
     items = conn.execute("SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC", (order_id,)).fetchall()
     timeline = get_order_timeline(conn, order_id)
+    finance_case = conn.execute(
+        "SELECT * FROM financial_case WHERE order_id = ?",
+        (order_id,),
+    ).fetchone()
     logs = conn.execute(
         "SELECT * FROM audit_logs WHERE details LIKE ? ORDER BY id DESC",
         (f"%order_id={order_id}%",),
@@ -1131,12 +1672,17 @@ def admin_order_detail(order_id):
     conn.close()
     order = normalize_datetime_fields(order, ["time", "status_time"])
     timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
+    finance_case = normalize_datetime_fields(
+        finance_case,
+        ["created_at", "updated_at", "resolved_at", "follow_up_due_at"],
+    )
     logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
     return render_template(
         "admin_order_detail.html",
         order=order,
         order_items=items,
         timeline=timeline,
+        finance_case=finance_case,
         logs=logs,
     )
 
@@ -1436,6 +1982,471 @@ def mark_cash_paid(order_id):
 
     conn.close()
     return redirect(url_for("admin"))
+
+
+@app.route("/admin/finance")
+@login_required_admin
+def admin_finance():
+    status_query = (request.args.get("status") or "").strip()
+    risk_query = (request.args.get("risk_tier") or "").strip()
+    order_id_query = (request.args.get("order_id") or "").strip()
+
+    if status_query not in FINANCIAL_CASE_STATUSES:
+        status_query = ""
+    if risk_query not in FINANCIAL_RISK_TIERS:
+        risk_query = ""
+
+    order_id_filter = None
+    if order_id_query:
+        try:
+            order_id_filter = int(order_id_query)
+        except ValueError:
+            order_id_query = ""
+
+    sql = """
+        SELECT
+            fc.*,
+            o.username,
+            o.contact_number,
+            o.menu,
+            o.total_price,
+            o.payment_method,
+            o.payment_status,
+            o.status AS order_status,
+            o.time AS order_time
+        FROM financial_case fc
+        JOIN orders o ON o.id = fc.order_id
+        WHERE 1=1
+    """
+    params = []
+    if status_query:
+        sql += " AND fc.status = ?"
+        params.append(status_query)
+    if risk_query:
+        sql += " AND fc.risk_tier = ?"
+        params.append(risk_query)
+    if order_id_filter is not None:
+        sql += " AND fc.order_id = ?"
+        params.append(order_id_filter)
+    sql += " ORDER BY fc.id DESC"
+
+    conn = get_db_connection()
+    cases = conn.execute(sql, params).fetchall()
+    all_cases = conn.execute("SELECT * FROM financial_case").fetchall()
+    candidate_count = conn.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM orders o
+        LEFT JOIN financial_case fc ON fc.order_id = o.id
+        WHERE o.status = 'Delivered'
+          AND o.payment_status != 'Paid'
+          AND COALESCE(o.total_price, 0) > 0
+          AND fc.id IS NULL
+        """
+    ).fetchone()["c"]
+    candidate_orders = conn.execute(
+        """
+        SELECT o.*
+        FROM orders o
+        LEFT JOIN financial_case fc ON fc.order_id = o.id
+        WHERE o.status = 'Delivered'
+          AND o.payment_status != 'Paid'
+          AND COALESCE(o.total_price, 0) > 0
+          AND fc.id IS NULL
+        ORDER BY o.id DESC
+        LIMIT 25
+        """
+    ).fetchall()
+    recent_actions = conn.execute(
+        """
+        SELECT
+            ca.*,
+            fc.order_id,
+            o.username
+        FROM case_action ca
+        JOIN financial_case fc ON fc.id = ca.case_id
+        JOIN orders o ON o.id = fc.order_id
+        ORDER BY ca.id DESC
+        LIMIT 12
+        """
+    ).fetchall()
+    conn.close()
+
+    now_dt = current_local_datetime()
+    active_cases = [case for case in all_cases if case["status"] not in FINANCIAL_CASE_CLOSED_STATUSES]
+    due_followups = [
+        case
+        for case in active_cases
+        if parse_order_datetime(case["follow_up_due_at"]) != datetime.min
+        and parse_order_datetime(case["follow_up_due_at"]) <= now_dt
+    ]
+    finance_stats = {
+        "total": len(all_cases),
+        "active": len(active_cases),
+        "escalated": sum(1 for case in all_cases if case["status"] == "Escalated"),
+        "resolved": sum(1 for case in all_cases if case["status"] in FINANCIAL_CASE_CLOSED_STATUSES),
+        "due_followups": len(due_followups),
+        "candidates": candidate_count,
+    }
+
+    cases = [
+        normalize_datetime_fields(
+            case,
+            ["created_at", "updated_at", "resolved_at", "follow_up_due_at", "order_time"],
+        )
+        for case in cases
+    ]
+    candidate_orders = [
+        normalize_datetime_fields(order, ["time", "status_time"]) for order in candidate_orders
+    ]
+    recent_actions = [
+        normalize_datetime_fields(action, ["created_at"]) for action in recent_actions
+    ]
+    filters = {
+        "status": status_query,
+        "risk_tier": risk_query,
+        "order_id": order_id_query,
+    }
+
+    return render_template(
+        "admin_finance.html",
+        cases=cases,
+        candidate_orders=candidate_orders,
+        recent_actions=recent_actions,
+        finance_stats=finance_stats,
+        filters=filters,
+        case_statuses=FINANCIAL_CASE_STATUSES,
+        risk_tiers=FINANCIAL_RISK_TIERS,
+    )
+
+
+@app.route("/admin/finance/case/create", methods=["POST"])
+@login_required_admin
+def admin_create_financial_case():
+    order_id_raw = (request.form.get("order_id") or "").strip()
+    try:
+        order_id = int(order_id_raw)
+    except ValueError:
+        return redirect(url_for("admin_finance") + "?error=invalid_order")
+
+    conn = get_db_connection()
+    case_id, outcome = create_financial_case_for_order(conn, order_id, ADMIN_USERNAME)
+    if outcome == "order_not_found":
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=order_not_found")
+
+    if outcome == "created":
+        record_audit(
+            conn,
+            "admin",
+            ADMIN_USERNAME,
+            "financial_case_opened",
+            f"financial_case_id={case_id}, order_id={order_id}",
+        )
+        conn.commit()
+        conn.close()
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?created=1")
+
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?existing=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>")
+@login_required_admin
+def admin_financial_case_detail(case_id):
+    conn = get_db_connection()
+    case = conn.execute(
+        """
+        SELECT
+            fc.*,
+            o.username,
+            o.contact_number,
+            o.menu,
+            o.total_price,
+            o.payment_method,
+            o.payment_status,
+            o.payment_reference,
+            o.payment_proof_path,
+            o.status AS order_status,
+            o.time AS order_time,
+            o.status_time AS order_status_time
+        FROM financial_case fc
+        JOIN orders o ON o.id = fc.order_id
+        WHERE fc.id = ?
+        """,
+        (case_id,),
+    ).fetchone()
+    if case is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    order_id = case["order_id"]
+    order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    items = get_finance_order_items(conn, order)
+    item_summary = summarize_finance_order_items(items)
+    timeline = get_order_timeline(conn, order_id)
+    evidence = conn.execute(
+        "SELECT * FROM case_evidence WHERE case_id = ? ORDER BY id DESC",
+        (case_id,),
+    ).fetchall()
+    reasoning = conn.execute(
+        "SELECT * FROM case_reasoning WHERE case_id = ? ORDER BY id DESC",
+        (case_id,),
+    ).fetchall()
+    actions = conn.execute(
+        "SELECT * FROM case_action WHERE case_id = ? ORDER BY id DESC",
+        (case_id,),
+    ).fetchall()
+    logs = conn.execute(
+        """
+        SELECT * FROM audit_logs
+        WHERE details LIKE ? OR details LIKE ?
+        ORDER BY id DESC
+        LIMIT 50
+        """,
+        (f"%financial_case_id={case_id}%", f"%order_id={order_id}%"),
+    ).fetchall()
+    conn.close()
+
+    case = normalize_datetime_fields(
+        case,
+        ["created_at", "updated_at", "resolved_at", "follow_up_due_at", "order_time", "order_status_time"],
+    )
+    order = normalize_datetime_fields(order, ["time", "status_time"])
+    timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
+    evidence = [normalize_datetime_fields(item, ["captured_at"]) for item in evidence]
+    reasoning = [normalize_datetime_fields(item, ["created_at"]) for item in reasoning]
+    actions = [normalize_datetime_fields(item, ["created_at"]) for item in actions]
+    logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
+
+    return render_template(
+        "admin_financial_case_detail.html",
+        case=case,
+        order=order,
+        order_items=items,
+        legacy_order_items_used=item_summary["uses_legacy_fallback"],
+        timeline=timeline,
+        evidence=evidence,
+        reasoning=reasoning,
+        actions=actions,
+        logs=logs,
+        case_statuses=FINANCIAL_CASE_STATUSES,
+        risk_tiers=FINANCIAL_RISK_TIERS,
+    )
+
+
+@app.route("/admin/finance/case/<int:case_id>/update", methods=["POST"])
+@login_required_admin
+def admin_update_financial_case(case_id):
+    conn = get_db_connection()
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    status = normalize_financial_choice(request.form.get("status"), FINANCIAL_CASE_STATUSES, case["status"])
+    risk_tier = normalize_financial_choice(
+        request.form.get("risk_tier"),
+        FINANCIAL_RISK_TIERS,
+        case["risk_tier"],
+    )
+    risk_score = parse_percentage(request.form.get("risk_score"), float(case["risk_score"] or 0))
+    confidence = parse_percentage(request.form.get("confidence"), float(case["confidence"] or 0))
+    follow_up_due_at = normalize_follow_up_datetime(request.form.get("follow_up_due_at"))
+    updated_at = now_string()
+    resolved_at = case["resolved_at"]
+
+    if status in FINANCIAL_CASE_CLOSED_STATUSES and not resolved_at:
+        resolved_at = updated_at
+    elif status not in FINANCIAL_CASE_CLOSED_STATUSES:
+        resolved_at = ""
+
+    conn.execute(
+        """
+        UPDATE financial_case
+        SET status = ?,
+            risk_tier = ?,
+            risk_score = ?,
+            confidence = ?,
+            updated_at = ?,
+            resolved_at = ?,
+            follow_up_due_at = ?
+        WHERE id = ?
+        """,
+        (
+            status,
+            risk_tier,
+            risk_score,
+            confidence,
+            updated_at,
+            resolved_at,
+            follow_up_due_at,
+            case_id,
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            "case_updated",
+            ADMIN_USERNAME,
+            f"status={status}, risk_tier={risk_tier}, risk_score={risk_score:.1f}, confidence={confidence:.1f}",
+            updated_at,
+        ),
+    )
+    record_audit(
+        conn,
+        "admin",
+        ADMIN_USERNAME,
+        "financial_case_updated",
+        f"financial_case_id={case_id}, order_id={case['order_id']}, status={status}",
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?updated=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>/analysis", methods=["POST"])
+@login_required_admin
+def admin_run_financial_case_analysis(case_id):
+    conn = get_db_connection()
+    result = analyze_financial_case(conn, case_id, ADMIN_USERNAME, "manual")
+    if result is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?analysis=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>/evidence", methods=["POST"])
+@login_required_admin
+def admin_capture_financial_case_evidence(case_id):
+    conn = get_db_connection()
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    if not capture_financial_case_evidence(conn, case_id, case["order_id"], "manual_refresh"):
+        conn.close()
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?error=evidence_failed")
+
+    created_at = now_string()
+    conn.execute("UPDATE financial_case SET updated_at = ? WHERE id = ?", (created_at, case_id))
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (case_id, "evidence_captured", ADMIN_USERNAME, "Captured current OMS order/payment snapshot.", created_at),
+    )
+    record_audit(
+        conn,
+        "admin",
+        ADMIN_USERNAME,
+        "financial_case_evidence_captured",
+        f"financial_case_id={case_id}, order_id={case['order_id']}",
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?evidence=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>/reasoning", methods=["POST"])
+@login_required_admin
+def admin_add_financial_case_reasoning(case_id):
+    hypothesis = (request.form.get("hypothesis") or "").strip()
+    chosen_action = (request.form.get("chosen_action") or "").strip()
+    rejected_alternatives = (request.form.get("rejected_alternatives") or "").strip()
+    risk_score = parse_percentage(request.form.get("risk_score"), 0.0)
+    confidence = parse_percentage(request.form.get("confidence"), 0.0)
+
+    if not any([hypothesis, chosen_action, rejected_alternatives]):
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?error=empty_reasoning")
+
+    conn = get_db_connection()
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    created_at = now_string()
+    conn.execute(
+        """
+        INSERT INTO case_reasoning (
+            case_id, hypothesis, risk_score, confidence,
+            chosen_action, rejected_alternatives, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            hypothesis,
+            risk_score,
+            confidence,
+            chosen_action,
+            rejected_alternatives,
+            created_at,
+        ),
+    )
+    conn.execute("UPDATE financial_case SET updated_at = ? WHERE id = ?", (created_at, case_id))
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (case_id, "reasoning_recorded", ADMIN_USERNAME, chosen_action or "Manual reasoning note added.", created_at),
+    )
+    record_audit(
+        conn,
+        "admin",
+        ADMIN_USERNAME,
+        "financial_case_reasoning_added",
+        f"financial_case_id={case_id}, order_id={case['order_id']}",
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?reasoning=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>/action", methods=["POST"])
+@login_required_admin
+def admin_add_financial_case_action(case_id):
+    action_type = (request.form.get("action_type") or "").strip()
+    outcome = (request.form.get("outcome") or "").strip()
+    if not action_type or not outcome:
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?error=empty_action")
+
+    conn = get_db_connection()
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        conn.close()
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+
+    created_at = now_string()
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (case_id, action_type, ADMIN_USERNAME, outcome, created_at),
+    )
+    conn.execute("UPDATE financial_case SET updated_at = ? WHERE id = ?", (created_at, case_id))
+    record_audit(
+        conn,
+        "admin",
+        ADMIN_USERNAME,
+        "financial_case_action_added",
+        f"financial_case_id={case_id}, order_id={case['order_id']}, action={action_type}",
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?action=1")
 
 # ==========================================
 # WEBSITE CONTENT (CMS) - HERO SECTION
