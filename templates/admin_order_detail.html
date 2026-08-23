@@ -47,7 +47,7 @@
             font-size: 14px;
         }
         th { background: #f1f5f9; }
-        .actions a {
+        .actions a, .actions button {
             text-decoration: none;
             display: inline-block;
             margin-right: 8px;
@@ -57,7 +57,10 @@
             background: #2563eb;
             font-size: 13px;
             font-weight: 700;
+            border: none;
+            cursor: pointer;
         }
+        .actions form { display: inline-block; margin: 0; }
         @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -82,6 +85,27 @@
                 <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
                 <p><strong>Summary:</strong> {{ order.menu }}</p>
             </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <h3 style="margin-top:0;">Finance Controller</h3>
+            {% if finance_case %}
+                <p>
+                    <strong>Financial Case:</strong>
+                    #{{ finance_case.id }} / {{ finance_case.status }} / {{ finance_case.risk_tier }}
+                </p>
+                <div class="actions">
+                    <a href="{{ url_for('admin_financial_case_detail', case_id=finance_case.id) }}">View Financial Case</a>
+                </div>
+            {% else %}
+                <p class="meta">No financial case is linked to this order.</p>
+                <div class="actions">
+                    <form method="POST" action="{{ url_for('admin_create_financial_case') }}">
+                        <input type="hidden" name="order_id" value="{{ order.id }}">
+                        <button type="submit">Open Financial Case</button>
+                    </form>
+                </div>
+            {% endif %}
         </div>
 
         <h3>Items</h3>

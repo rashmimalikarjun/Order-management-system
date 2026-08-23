@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Financial Case #{{ case.id }} - Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1d52cf, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    h3 { margin: 0 0 10px; }
+    .meta { color: #475569; margin: 4px 0 0; font-size: 14px; }
+    .btn, button {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #0f766e; }
+    .btn.ghost { background: #334155; }
+    .btn.warn, button.warn { background: #b45309; }
+    .section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-top: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .summary-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .summary-box p { margin: 7px 0; }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .msg {
+      margin: 0 0 12px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 10px 8px;
+      font-size: 14px;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .table-wrap { overflow-x: auto; }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      display: inline-block;
+      white-space: nowrap;
+    }
+    .status-open { background: #dbeafe; color: #1e3a8a; }
+    .status-investigating { background: #fef3c7; color: #92400e; }
+    .status-escalated { background: #fee2e2; color: #991b1b; }
+    .status-resolved { background: #dcfce7; color: #166534; }
+    .status-closed { background: #e2e8f0; color: #334155; }
+    .risk-unscored { background: #e2e8f0; color: #334155; }
+    .risk-low { background: #dcfce7; color: #166534; }
+    .risk-medium { background: #fef3c7; color: #92400e; }
+    .risk-high { background: #ffedd5; color: #9a3412; }
+    .risk-critical { background: #fee2e2; color: #991b1b; }
+    details {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      margin-top: 8px;
+    }
+    summary { cursor: pointer; font-weight: 800; }
+    pre {
+      white-space: pre-wrap;
+      overflow-x: auto;
+      max-height: 360px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .actions form { margin: 0; }
+    .empty {
+      padding: 14px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+      background: #fff;
+    }
+    @media (max-width: 720px) {
+      body { padding: 12px; }
+      .container { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Financial Case #{{ case.id }}</h2>
+        <p class="meta">Order #{{ case.order_id }} | {{ case.username }}</p>
+      </div>
+      <div class="actions">
+        <a href="{{ url_for('admin_finance') }}" class="btn secondary">Finance Controller</a>
+        <a href="{{ url_for('admin_order_detail', order_id=case.order_id) }}" class="btn secondary">Order Detail</a>
+        <form method="POST" action="{{ url_for('admin_run_financial_case_analysis', case_id=case.id) }}">
+          <button type="submit" class="warn">Run Analysis</button>
+        </form>
+        <a href="{{ url_for('admin') }}" class="btn ghost">Orders</a>
+      </div>
+    </div>
+
+    {% if request.args.get('created') %}
+      <div class="msg ok">Financial case opened.</div>
+    {% elif request.args.get('existing') %}
+      <div class="msg ok">Existing financial case loaded.</div>
+    {% elif request.args.get('updated') %}
+      <div class="msg ok">Financial case updated.</div>
+    {% elif request.args.get('evidence') %}
+      <div class="msg ok">Evidence snapshot captured.</div>
+    {% elif request.args.get('reasoning') %}
+      <div class="msg ok">Reasoning saved.</div>
+    {% elif request.args.get('analysis') %}
+      <div class="msg ok">Deterministic analysis completed and saved.</div>
+    {% elif request.args.get('action') %}
+      <div class="msg ok">Action recorded.</div>
+    {% elif request.args.get('error') == 'empty_reasoning' %}
+      <div class="msg err">Add a hypothesis, chosen action, or rejected alternative before saving reasoning.</div>
+    {% elif request.args.get('error') == 'empty_action' %}
+      <div class="msg err">Action type and outcome are required.</div>
+    {% elif request.args.get('error') == 'evidence_failed' %}
+      <div class="msg err">Evidence could not be captured for this order.</div>
+    {% endif %}
+
+    <div class="grid">
+      <div class="summary-box">
+        <h3>Case</h3>
+        <p><strong>Status:</strong> <span class="pill status-{{ case.status|lower }}">{{ case.status }}</span></p>
+        <p><strong>Risk:</strong> <span class="pill risk-{{ case.risk_tier|lower }}">{{ case.risk_tier }}</span></p>
+        <p><strong>Score:</strong> {{ '%.1f'|format(case.risk_score or 0) }}</p>
+        <p><strong>Confidence:</strong> {{ '%.1f'|format(case.confidence or 0) }}%</p>
+        <p><strong>Follow Up:</strong> {{ case.follow_up_due_at or '-' }}</p>
+        <p><strong>Resolved:</strong> {{ case.resolved_at or '-' }}</p>
+      </div>
+      <div class="summary-box">
+        <h3>Order</h3>
+        <p><strong>Customer:</strong> {{ order.username }}</p>
+        <p><strong>Contact:</strong> {{ order.contact_number or '-' }}</p>
+        <p><strong>Status:</strong> {{ order.status }}</p>
+        <p><strong>Ordered:</strong> {{ order.time }}</p>
+        <p><strong>Updated:</strong> {{ order.status_time }}</p>
+      </div>
+      <div class="summary-box">
+        <h3>Payment</h3>
+        <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
+        {% if legacy_order_items_used and not order.total_price %}
+          <p class="meta">Recorded amount is 0; no reliable legacy price was stored.</p>
+        {% endif %}
+        <p><strong>Method:</strong> {{ order.payment_method }}</p>
+        <p><strong>Status:</strong> {{ order.payment_status }}</p>
+        <p><strong>Reference:</strong> {{ order.payment_reference or '-' }}</p>
+        {% if order.payment_proof_path %}
+          <p><strong>Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View uploaded proof</a></p>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_update_financial_case', case_id=case.id) }}" class="section">
+      <h3>Lifecycle</h3>
+      <div class="form-grid">
+        <div>
+          <label for="status">Status</label>
+          <select id="status" name="status">
+            {% for status in case_statuses %}
+              <option value="{{ status }}" {% if case.status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="risk_tier">Risk Tier</label>
+          <select id="risk_tier" name="risk_tier">
+            {% for tier in risk_tiers %}
+              <option value="{{ tier }}" {% if case.risk_tier == tier %}selected{% endif %}>{{ tier }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="risk_score">Risk Score</label>
+          <input id="risk_score" name="risk_score" type="number" min="0" max="100" step="0.1" value="{{ '%.1f'|format(case.risk_score or 0) }}">
+        </div>
+        <div>
+          <label for="confidence">Confidence</label>
+          <input id="confidence" name="confidence" type="number" min="0" max="100" step="0.1" value="{{ '%.1f'|format(case.confidence or 0) }}">
+        </div>
+        <div>
+          <label for="follow_up_due_at">Follow Up Due</label>
+          <input id="follow_up_due_at" name="follow_up_due_at" type="text" value="{{ case.follow_up_due_at }}">
+        </div>
+        <button type="submit">Save Case</button>
+      </div>
+    </form>
+
+    <div class="section">
+      <div class="topbar" style="margin-bottom:0;">
+        <h3>Evidence</h3>
+        <form method="POST" action="{{ url_for('admin_capture_financial_case_evidence', case_id=case.id) }}">
+          <button type="submit" class="warn">Capture Snapshot</button>
+        </form>
+      </div>
+      {% if evidence %}
+        {% for item in evidence %}
+          <details {% if loop.first %}open{% endif %}>
+            <summary>#{{ item.id }} | {{ item.evidence_type }} | {{ item.captured_at }}</summary>
+            <pre>{{ item.evidence_snapshot }}</pre>
+          </details>
+        {% endfor %}
+      {% else %}
+        <div class="empty">No evidence snapshots yet.</div>
+      {% endif %}
+    </div>
+
+    <form method="POST" action="{{ url_for('admin_add_financial_case_reasoning', case_id=case.id) }}" class="section">
+      <h3>Reasoning</h3>
+      <div class="form-grid">
+        <div>
+          <label for="reasoning_score">Risk Score</label>
+          <input id="reasoning_score" name="risk_score" type="number" min="0" max="100" step="0.1" value="0">
+        </div>
+        <div>
+          <label for="reasoning_confidence">Confidence</label>
+          <input id="reasoning_confidence" name="confidence" type="number" min="0" max="100" step="0.1" value="0">
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:10px; align-items:start;">
+        <div>
+          <label for="hypothesis">Hypothesis</label>
+          <textarea id="hypothesis" name="hypothesis"></textarea>
+        </div>
+        <div>
+          <label for="chosen_action">Chosen Action</label>
+          <textarea id="chosen_action" name="chosen_action"></textarea>
+        </div>
+        <div>
+          <label for="rejected_alternatives">Rejected Alternatives</label>
+          <textarea id="rejected_alternatives" name="rejected_alternatives"></textarea>
+        </div>
+      </div>
+      <button type="submit" style="margin-top:10px;">Save Reasoning</button>
+
+      {% if reasoning %}
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <tr>
+              <th>ID</th>
+              <th>Hypothesis</th>
+              <th>Score</th>
+              <th>Confidence</th>
+              <th>Chosen Action</th>
+              <th>Rejected</th>
+              <th>Time</th>
+            </tr>
+            {% for item in reasoning %}
+              <tr>
+                <td>#{{ item.id }}</td>
+                <td>{{ item.hypothesis or '-' }}</td>
+                <td>{{ '%.1f'|format(item.risk_score or 0) }}</td>
+                <td>{{ '%.1f'|format(item.confidence or 0) }}%</td>
+                <td>{{ item.chosen_action or '-' }}</td>
+                <td>{{ item.rejected_alternatives or '-' }}</td>
+                <td>{{ item.created_at }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% else %}
+        <div class="empty" style="margin-top:12px;">No reasoning records yet.</div>
+      {% endif %}
+    </form>
+
+    <form method="POST" action="{{ url_for('admin_add_financial_case_action', case_id=case.id) }}" class="section">
+      <h3>Action Timeline</h3>
+      <div class="form-grid">
+        <div>
+          <label for="action_type">Action Type</label>
+          <select id="action_type" name="action_type">
+            <option value="human_override">Human Override</option>
+            <option value="customer_follow_up">Customer Follow Up</option>
+            <option value="admin_note">Admin Note</option>
+            <option value="escalation_note">Escalation Note</option>
+            <option value="payment_review">Payment Review</option>
+          </select>
+        </div>
+        <div>
+          <label for="outcome">Outcome</label>
+          <input id="outcome" name="outcome" type="text" required>
+        </div>
+        <button type="submit">Record Action</button>
+      </div>
+
+      {% if actions %}
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <tr>
+              <th>ID</th>
+              <th>Action</th>
+              <th>Initiated By</th>
+              <th>Outcome</th>
+              <th>Time</th>
+            </tr>
+            {% for action in actions %}
+              <tr>
+                <td>#{{ action.id }}</td>
+                <td>{{ action.action_type }}</td>
+                <td>{{ action.initiated_by }}</td>
+                <td>{{ action.outcome }}</td>
+                <td>{{ action.created_at }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% else %}
+        <div class="empty" style="margin-top:12px;">No case actions yet.</div>
+      {% endif %}
+    </form>
+
+    <div class="section">
+      <h3>Order Items</h3>
+      {% if order_items %}
+        {% if legacy_order_items_used %}
+          <p class="meta">Showing legacy order data from the original menu and quantity fields. Unit price and line subtotal were not recorded.</p>
+        {% endif %}
+        <table>
+          <tr>
+            <th>Item</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>Subtotal</th>
+            <th>Source</th>
+          </tr>
+          {% for item in order_items %}
+            <tr>
+              <td>{{ item.item_name }}</td>
+              <td>
+                {% if item.is_legacy_fallback %}
+                  Not recorded
+                {% else %}
+                  INR {{ '%.2f'|format(item.item_price) }}
+                {% endif %}
+              </td>
+              <td>{{ item.quantity }}</td>
+              <td>
+                {% if item.is_legacy_fallback %}
+                  Not recorded
+                {% else %}
+                  INR {{ '%.2f'|format(item.subtotal) }}
+                {% endif %}
+              </td>
+              <td>
+                {% if item.is_legacy_fallback %}
+                  Legacy order fields
+                {% else %}
+                  Order items
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <div class="empty">No line items are recorded for this order.</div>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <h3>Order Timeline</h3>
+      {% if timeline %}
+        <table>
+          <tr>
+            <th>Status</th>
+            <th>Time</th>
+            <th>Changed By</th>
+            <th>Note</th>
+          </tr>
+          {% for step in timeline %}
+            <tr>
+              <td>{{ step.status }}</td>
+              <td>{{ step.changed_at }}</td>
+              <td>{{ step.changed_by }}</td>
+              <td>{{ step.note or '-' }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <div class="empty">No order timeline entries yet.</div>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <h3>Audit Trail</h3>
+      {% if logs %}
+        <table>
+          <tr>
+            <th>ID</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Details</th>
+            <th>Time</th>
+          </tr>
+          {% for log in logs %}
+            <tr>
+              <td>#{{ log.id }}</td>
+              <td>{{ log.actor_type }}:{{ log.actor_name }}</td>
+              <td>{{ log.action }}</td>
+              <td>{{ log.details or '-' }}</td>
+              <td>{{ log.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <div class="empty">No matching audit entries.</div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
