@@ -2,6 +2,8 @@ import os
 import csv
 import io
 import json
+import urllib.request
+import urllib.error
 from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta
@@ -344,7 +346,7 @@ def build_financial_case_evidence_snapshot(conn, order_id):
     payment_status = order_data.get("payment_status") or ""
 
     return {
-        "phase": "Phase 1 foundation",
+        "phase": "Phase 2 AI foundation",
         "captured_at": now_string(),
         "order": {
             "id": order_data.get("id"),
@@ -371,7 +373,7 @@ def build_financial_case_evidence_snapshot(conn, order_id):
             "estimated_shortfall": payment_analysis["shortfall_amount"],
             "needs_review": payment_analysis["shortfall_amount"] > 0
             or payment_analysis["financial_data_incomplete"],
-            "basis": "Existing OMS order/payment fields only; no AI or external payment reconciliation has run.",
+            "basis": "Existing OMS order/payment fields only.",
         },
         "item_summary": item_summary,
         "items": finance_items,
@@ -427,6 +429,8 @@ def evaluate_financial_case(order, finance_items, evidence_rows):
             "hypothesis": "No linked OMS order was available for analysis.",
             "chosen_action": "Review the financial case linkage before continuing.",
             "rejected_alternatives": "LLM reasoning not invoked; no valid order context was available.",
+            "requires_human_approval": True,
+            "reasoning_summary": "Deterministic fallback applied."
         }
 
     item_summary = summarize_finance_order_items(finance_items)
@@ -517,7 +521,102 @@ def evaluate_financial_case(order, finance_items, evidence_rows):
             "LLM reasoning not invoked; deterministic analysis used. "
             f"Evidence flags: {', '.join(financial_notes) if financial_notes else 'none'}."
         ),
+        "requires_human_approval": True,
+        "reasoning_summary": "Deterministic analysis applied based on core OMS parameters."
     }
+
+
+def call_gemini_api(prompt, api_key, model_name):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+    data = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json"}
+    }).encode('utf-8')
+    
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    with urllib.request.urlopen(req, timeout=15) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        return result["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def build_ai_prompt(snapshot):
+    return f"""You are a financial control assistant for an Order Management System.
+Analyze only the supplied evidence. Do not invent facts. Do not assume missing evidence.
+Separate observed facts from inference. Recommend the safest appropriate next action.
+When evidence is insufficient, explicitly state that evidence is insufficient.
+
+The AI must distinguish between:
+1. payment definitely unresolved
+2. payment possibly completed but evidence missing
+3. payment confirmed
+4. data inconsistency
+
+Return a strictly valid JSON object matching this schema exactly:
+{{
+    "risk_tier": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
+    "risk_score": <number 0-100>,
+    "confidence": <number 0-100>,
+    "hypothesis": "<string detailed hypothesis>",
+    "recommended_action": "<string recommended next step>",
+    "rejected_alternatives": ["<string>", "<string>"],
+    "requires_human_approval": <boolean>,
+    "reasoning_summary": "<string brief summary>"
+}}
+
+Evidence Snapshot:
+{json.dumps(snapshot, indent=2)}
+"""
+
+
+def validate_gemini_response(ai_data):
+    if not isinstance(ai_data, dict):
+        return False
+
+    required_keys = [
+        "risk_tier", "risk_score", "confidence", "hypothesis",
+        "recommended_action", "rejected_alternatives",
+        "requires_human_approval", "reasoning_summary"
+    ]
+    for key in required_keys:
+        if key not in ai_data:
+            return False
+
+    # 4. risk_tier MUST be exactly one of the allowed strings
+    if ai_data["risk_tier"] not in ["LOW", "MEDIUM", "HIGH", "CRITICAL"]:
+        return False
+
+    # 5 & 6. risk_score and confidence MUST be numbers between 0 and 100
+    for key in ["risk_score", "confidence"]:
+        val = ai_data[key]
+        if type(val) is bool:
+            return False
+        if not isinstance(val, (int, float)):
+            return False
+        if val != val or val == float('inf') or val == float('-inf'):
+            return False
+        if not (0 <= val <= 100):
+            return False
+
+    # 7, 8 & 11. non-empty strings
+    for key in ["hypothesis", "recommended_action", "reasoning_summary"]:
+        val = ai_data[key]
+        if not isinstance(val, str) or not val.strip():
+            return False
+
+    # 9. rejected_alternatives MUST be a list of strings
+    rejected = ai_data["rejected_alternatives"]
+    if not isinstance(rejected, list):
+        return False
+    if not all(isinstance(item, str) for item in rejected):
+        return False
+
+    # 10. requires_human_approval MUST be a strict boolean
+    req_approval = ai_data["requires_human_approval"]
+    if type(req_approval) is not bool:
+        return False
+
+    return True
 
 
 def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
@@ -544,9 +643,10 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
         """
         INSERT INTO case_reasoning (
             case_id, hypothesis, risk_score, confidence,
-            chosen_action, rejected_alternatives, created_at
+            chosen_action, rejected_alternatives, created_at,
+            requires_human_approval, reasoning_summary, analysis_source
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             case_id,
@@ -556,6 +656,9 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
             result["chosen_action"],
             result["rejected_alternatives"],
             created_at,
+            1 if result.get("requires_human_approval", True) else 0,
+            result.get("reasoning_summary", ""),
+            result.get("analysis_source", "deterministic_v1"),
         ),
     )
     conn.execute(
@@ -568,9 +671,10 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
             "analysis_run",
             initiated_by,
             (
-                f"{result['analysis_source']} via {trigger}: "
+                f"[{result.get('analysis_source', 'deterministic_v1').upper()}] via {trigger}: "
                 f"{result['risk_tier']} ({result['risk_score']:.1f}, "
-                f"confidence {result['confidence']:.1f})"
+                f"confidence {result['confidence']:.1f}). "
+                f"Action: {result['chosen_action']}"
             ),
             created_at,
         ),
@@ -582,7 +686,7 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
         "financial_case_analysis_run",
         (
             f"financial_case_id={case_id}, order_id={case['order_id']}, "
-            f"source={result['analysis_source']}, trigger={trigger}, "
+            f"source={result.get('analysis_source', 'deterministic_v1')}, trigger={trigger}, "
             f"risk_tier={result['risk_tier']}"
         ),
     )
@@ -599,7 +703,52 @@ def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="
         "SELECT * FROM case_evidence WHERE case_id = ? ORDER BY id DESC",
         (case_id,),
     ).fetchall()
-    result = evaluate_financial_case(order, finance_items, evidence_rows)
+    
+    result = None
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    
+    if gemini_key:
+        try:
+            model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+            
+            if evidence_rows:
+                snapshot = json.loads(evidence_rows[0]["evidence_snapshot"])
+            else:
+                snapshot = build_financial_case_evidence_snapshot(conn, order["id"])
+                
+            prompt = build_ai_prompt(snapshot)
+            ai_text = call_gemini_api(prompt, gemini_key, model_name)
+            
+            # STRICT VALIDATION PIPELINE
+            try:
+                ai_data = json.loads(ai_text)
+            except Exception:
+                ai_data = None
+            
+            if ai_data is not None and validate_gemini_response(ai_data):
+                result = {
+                    "analysis_source": "gemini_ai_v1",
+                    "risk_tier": ai_data["risk_tier"],
+                    "risk_score": float(ai_data["risk_score"]),
+                    "confidence": float(ai_data["confidence"]),
+                    "hypothesis": ai_data["hypothesis"].strip(),
+                    "chosen_action": ai_data["recommended_action"].strip(),
+                    "rejected_alternatives": json.dumps(ai_data["rejected_alternatives"]),
+                    "requires_human_approval": ai_data["requires_human_approval"],
+                    "reasoning_summary": ai_data["reasoning_summary"].strip()
+                }
+            else:
+                print("WARNING: AI Validation Failed. Safely falling back to deterministic.")
+                result = None
+                
+        except Exception as e:
+            print(f"WARNING: AI Analysis Failed ({e}). Safely falling back to deterministic.")
+            result = None
+
+    # Deterministic fallback seamlessly covers validation failures, connection issues, or missing API keys.
+    if result is None:
+        result = evaluate_financial_case(order, finance_items, evidence_rows)
+        
     save_financial_case_analysis(conn, case, result, initiated_by, trigger)
     return result
 
@@ -873,6 +1022,7 @@ def init_db():
         )
         """
     )
+    
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS case_reasoning (
@@ -888,6 +1038,16 @@ def init_db():
         )
         """
     )
+    
+    # Phase 2: AI Architecture Database Schema Updates (Safe ALTER statements for backward compatibility)
+    case_reasoning_cols = [row["name"] for row in conn.execute("PRAGMA table_info(case_reasoning)").fetchall()]
+    if "requires_human_approval" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN requires_human_approval INTEGER NOT NULL DEFAULT 1")
+    if "reasoning_summary" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN reasoning_summary TEXT NOT NULL DEFAULT ''")
+    if "analysis_source" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN analysis_source TEXT NOT NULL DEFAULT 'deterministic_v1'")
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS case_action (
@@ -2380,9 +2540,10 @@ def admin_add_financial_case_reasoning(case_id):
         """
         INSERT INTO case_reasoning (
             case_id, hypothesis, risk_score, confidence,
-            chosen_action, rejected_alternatives, created_at
+            chosen_action, rejected_alternatives, created_at,
+            requires_human_approval, reasoning_summary, analysis_source
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             case_id,
@@ -2392,6 +2553,9 @@ def admin_add_financial_case_reasoning(case_id):
             chosen_action,
             rejected_alternatives,
             created_at,
+            0,  # Manual intervention doesn't "require" human approval because it IS human.
+            "Manual admin reasoning.",
+            "admin_manual"
         ),
     )
     conn.execute("UPDATE financial_case SET updated_at = ? WHERE id = ?", (created_at, case_id))
@@ -2601,6 +2765,7 @@ def admin_content_save():
     conn.close()
     
     return redirect(url_for("admin_content") + "?saved=1")
+
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
