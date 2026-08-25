@@ -508,5 +508,111 @@ class Phase4FollowUpAndFailureTests(unittest.TestCase):
         conn.close()
 
 
+class Phase3UIWiringTests(unittest.TestCase):
+    """Confirms the reasoning detail page actually exposes the Phase 3 approval
+    routes to an admin, using only routes/fields that already existed and were
+    already covered by Phase3FinancialApprovalTests."""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        oms.DATABASE = self.db_path
+        oms.app.config.update(TESTING=True, SECRET_KEY="test-secret")
+        os.environ.pop("GEMINI_API_KEY", None)
+        oms.init_db()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    def connect(self):
+        return oms.get_db_connection()
+
+    def login_admin(self, client):
+        with client.session_transaction() as sess:
+            sess["admin_logged_in"] = True
+
+    def create_order(self, conn):
+        now = oms.now_string()
+        cursor = conn.execute(
+            """
+            INSERT INTO orders (
+                username, menu, quantity, time, status, status_time,
+                total_price, payment_method, payment_status, payment_reference,
+                contact_number, payment_proof_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("alice", "Veg Meal", 1, now, "Delivered", now, 120.0, "UPI QR", "Pending", "", "5550100", ""),
+        )
+        return cursor.lastrowid
+
+    def create_case(self):
+        conn = self.connect()
+        order_id = self.create_order(conn)
+        case_id, outcome = oms.create_financial_case_for_order(conn, order_id, "admin")
+        self.assertEqual(outcome, "created")
+        conn.commit()
+        conn.close()
+        return case_id
+
+    def test_detail_page_renders_approve_and_reject_forms_for_pending_reasoning(self):
+        case_id = self.create_case()
+        client = oms.app.test_client()
+        self.login_admin(client)
+
+        response = client.get(f"/admin/finance/case/{case_id}")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+
+        approve_url = f"/admin/finance/case/{case_id}/reasoning/"
+        self.assertIn(approve_url, body)
+        self.assertIn("/approve", body)
+        self.assertIn("/reject", body)
+        self.assertIn("Pending", body)
+
+    def test_clicking_rendered_approve_action_actually_approves(self):
+        case_id = self.create_case()
+        conn = self.connect()
+        reasoning = conn.execute(
+            "SELECT * FROM case_reasoning WHERE case_id = ? ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        conn.close()
+
+        client = oms.app.test_client()
+        self.login_admin(client)
+        detail = client.get(f"/admin/finance/case/{case_id}").data.decode()
+        expected_action = f"/admin/finance/case/{case_id}/reasoning/{reasoning['id']}/approve"
+        self.assertIn(expected_action, detail)
+
+        response = client.post(expected_action)
+        self.assertEqual(response.status_code, 302)
+
+        conn = self.connect()
+        approved = conn.execute("SELECT * FROM case_reasoning WHERE id = ?", (reasoning["id"],)).fetchone()
+        self.assertEqual(approved["approval_state"], "APPROVED")
+        conn.close()
+
+    def test_already_reviewed_reasoning_shows_no_action_buttons(self):
+        case_id = self.create_case()
+        client = oms.app.test_client()
+        self.login_admin(client)
+
+        conn = self.connect()
+        reasoning = conn.execute(
+            "SELECT * FROM case_reasoning WHERE case_id = ? ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        conn.close()
+        client.post(f"/admin/finance/case/{case_id}/reasoning/{reasoning['id']}/approve")
+
+        body = client.get(f"/admin/finance/case/{case_id}").data.decode()
+        self.assertIn("Approved", body)
+        # No pending approve/reject action should remain for this now-resolved entry.
+        self.assertNotIn(f"/reasoning/{reasoning['id']}/approve", body)
+        self.assertNotIn(f"/reasoning/{reasoning['id']}/reject", body)
+
+
 if __name__ == "__main__":
     unittest.main()
