@@ -41,6 +41,7 @@ DEFAULT_ADMIN_PASSWORD = "admin123"
 FINANCIAL_CASE_STATUSES = ("Open", "Investigating", "Escalated", "Resolved", "Closed")
 FINANCIAL_CASE_CLOSED_STATUSES = {"Resolved", "Closed"}
 FINANCIAL_RISK_TIERS = ("Unscored", "Low", "Medium", "High", "Critical")
+REASONING_APPROVAL_STATES = ("PENDING", "APPROVED", "REJECTED")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PAYMENT_PROOF_UPLOAD_FOLDER, exist_ok=True)
@@ -207,6 +208,14 @@ def get_order_timeline(conn, order_id):
 def normalize_financial_choice(value, allowed_values, default_value):
     value = (value or "").strip()
     return value if value in allowed_values else default_value
+
+
+def normalize_risk_tier(value, default_value="Unscored"):
+    value = (value or "").strip()
+    for tier in FINANCIAL_RISK_TIERS:
+        if value.lower() == tier.lower():
+            return tier
+    return default_value
 
 
 def parse_percentage(value, default=0.0):
@@ -622,45 +631,39 @@ def validate_gemini_response(ai_data):
 def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
     created_at = now_string()
     case_id = case["id"]
-    conn.execute(
-        """
-        UPDATE financial_case
-        SET risk_tier = ?,
-            risk_score = ?,
-            confidence = ?,
-            updated_at = ?
-        WHERE id = ?
-        """,
-        (
-            result["risk_tier"],
-            result["risk_score"],
-            result["confidence"],
-            created_at,
-            case_id,
-        ),
-    )
-    conn.execute(
+    risk_tier = normalize_risk_tier(result.get("risk_tier"), "Unscored")
+    risk_score = parse_percentage(result.get("risk_score"), 0.0)
+    confidence = parse_percentage(result.get("confidence"), 0.0)
+    evidence_snapshot_id = result.get("evidence_snapshot_id")
+    reasoning_cursor = conn.execute(
         """
         INSERT INTO case_reasoning (
-            case_id, hypothesis, risk_score, confidence,
+            case_id, evidence_snapshot_id, hypothesis, risk_tier, risk_score, confidence,
             chosen_action, rejected_alternatives, created_at,
-            requires_human_approval, reasoning_summary, analysis_source
+            requires_human_approval, reasoning_summary, analysis_source,
+            approval_state, reviewed_at, reviewed_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             case_id,
+            evidence_snapshot_id,
             result["hypothesis"],
-            result["risk_score"],
-            result["confidence"],
+            risk_tier,
+            risk_score,
+            confidence,
             result["chosen_action"],
             result["rejected_alternatives"],
             created_at,
-            1 if result.get("requires_human_approval", True) else 0,
+            1,
             result.get("reasoning_summary", ""),
             result.get("analysis_source", "deterministic_v1"),
+            "PENDING",
+            "",
+            "",
         ),
     )
+    reasoning_id = reasoning_cursor.lastrowid
     conn.execute(
         """
         INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
@@ -672,8 +675,8 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
             initiated_by,
             (
                 f"[{result.get('analysis_source', 'deterministic_v1').upper()}] via {trigger}: "
-                f"{result['risk_tier']} ({result['risk_score']:.1f}, "
-                f"confidence {result['confidence']:.1f}). "
+                f"recommendation pending review: {risk_tier} ({risk_score:.1f}, "
+                f"confidence {confidence:.1f}). "
                 f"Action: {result['chosen_action']}"
             ),
             created_at,
@@ -685,11 +688,13 @@ def save_financial_case_analysis(conn, case, result, initiated_by, trigger):
         initiated_by,
         "financial_case_analysis_run",
         (
-            f"financial_case_id={case_id}, order_id={case['order_id']}, "
+            f"financial_case_id={case_id}, reasoning_id={reasoning_id}, order_id={case['order_id']}, "
             f"source={result.get('analysis_source', 'deterministic_v1')}, trigger={trigger}, "
-            f"risk_tier={result['risk_tier']}"
+            f"recommended_risk_tier={risk_tier}, risk_score={risk_score:.1f}, "
+            f"confidence={confidence:.1f}, approval_state=PENDING"
         ),
     )
+    return reasoning_id
 
 
 def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="manual"):
@@ -703,6 +708,7 @@ def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="
         "SELECT * FROM case_evidence WHERE case_id = ? ORDER BY id DESC",
         (case_id,),
     ).fetchall()
+    latest_evidence = evidence_rows[0] if evidence_rows else None
     
     result = None
     gemini_key = os.environ.get("GEMINI_API_KEY")
@@ -728,7 +734,7 @@ def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="
             if ai_data is not None and validate_gemini_response(ai_data):
                 result = {
                     "analysis_source": "gemini_ai_v1",
-                    "risk_tier": ai_data["risk_tier"],
+                    "risk_tier": normalize_risk_tier(ai_data["risk_tier"], "Unscored"),
                     "risk_score": float(ai_data["risk_score"]),
                     "confidence": float(ai_data["confidence"]),
                     "hypothesis": ai_data["hypothesis"].strip(),
@@ -748,8 +754,10 @@ def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="
     # Deterministic fallback seamlessly covers validation failures, connection issues, or missing API keys.
     if result is None:
         result = evaluate_financial_case(order, finance_items, evidence_rows)
-        
-    save_financial_case_analysis(conn, case, result, initiated_by, trigger)
+
+    result["evidence_snapshot_id"] = latest_evidence["id"] if latest_evidence else None
+    result["risk_tier"] = normalize_risk_tier(result.get("risk_tier"), "Unscored")
+    result["reasoning_id"] = save_financial_case_analysis(conn, case, result, initiated_by, trigger)
     return result
 
 
@@ -803,6 +811,147 @@ def create_financial_case_for_order(conn, order_id, initiated_by):
     )
     analyze_financial_case(conn, case_id, initiated_by, "case_creation")
     return case_id, "created"
+
+
+def latest_approvable_reasoning_id(conn, case_id):
+    row = conn.execute(
+        """
+        SELECT id FROM case_reasoning
+        WHERE case_id = ?
+          AND requires_human_approval = 1
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (case_id,),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def review_financial_case_reasoning(conn, case_id, reasoning_id, decision, reviewer):
+    if decision not in REASONING_APPROVAL_STATES[1:]:
+        return "invalid_decision"
+
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return "case_not_found"
+
+    reasoning = conn.execute(
+        "SELECT * FROM case_reasoning WHERE id = ?",
+        (reasoning_id,),
+    ).fetchone()
+    if reasoning is None:
+        return "reasoning_not_found"
+    if reasoning["case_id"] != case_id:
+        return "reasoning_case_mismatch"
+    if not reasoning["requires_human_approval"]:
+        return "reasoning_not_approvable"
+    if reasoning["approval_state"] != "PENDING":
+        return "reasoning_not_pending"
+
+    latest_reasoning_id = latest_approvable_reasoning_id(conn, case_id)
+    if decision == "APPROVED" and reasoning_id != latest_reasoning_id:
+        record_audit(
+            conn,
+            "admin",
+            reviewer,
+            "financial_case_reasoning_approval_blocked",
+            (
+                f"financial_case_id={case_id}, attempted_reasoning_id={reasoning_id}, "
+                f"latest_reasoning_id={latest_reasoning_id}, order_id={case['order_id']}, "
+                "reason=stale_reasoning"
+            ),
+        )
+        return "stale_reasoning"
+
+    reviewed_at = now_string()
+    risk_tier = normalize_risk_tier(reasoning["risk_tier"], "Unscored")
+    risk_score = parse_percentage(reasoning["risk_score"], 0.0)
+    confidence = parse_percentage(reasoning["confidence"], 0.0)
+
+    if decision == "APPROVED":
+        conn.execute(
+            """
+            UPDATE financial_case
+            SET risk_tier = ?,
+                risk_score = ?,
+                confidence = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (risk_tier, risk_score, confidence, reviewed_at, case_id),
+        )
+        action_type = "reasoning_approved"
+        audit_action = "financial_case_reasoning_approved"
+        outcome = (
+            f"Approved reasoning #{reasoning_id}: {risk_tier} "
+            f"({risk_score:.1f}, confidence {confidence:.1f})."
+        )
+        route_outcome = "approved"
+    else:
+        action_type = "reasoning_rejected"
+        audit_action = "financial_case_reasoning_rejected"
+        outcome = (
+            f"Rejected reasoning #{reasoning_id}: {risk_tier} "
+            f"({risk_score:.1f}, confidence {confidence:.1f})."
+        )
+        route_outcome = "rejected"
+
+    conn.execute(
+        """
+        UPDATE case_reasoning
+        SET approval_state = ?,
+            reviewed_at = ?,
+            reviewed_by = ?
+        WHERE id = ?
+        """,
+        (decision, reviewed_at, reviewer, reasoning_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (case_id, action_type, reviewer, outcome, reviewed_at),
+    )
+    record_audit(
+        conn,
+        "admin",
+        reviewer,
+        audit_action,
+        (
+            f"financial_case_id={case_id}, reasoning_id={reasoning_id}, order_id={case['order_id']}, "
+            f"reviewer={reviewer}, decision={decision}, recommended_risk_tier={risk_tier}, "
+            f"risk_score={risk_score:.1f}, confidence={confidence:.1f}"
+        ),
+    )
+    return route_outcome
+
+
+def financial_reasoning_review_redirect(case_id, outcome):
+    if outcome == "approved":
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?approved=1")
+    if outcome == "rejected":
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?rejected=1")
+    if outcome == "case_not_found":
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + f"?error={outcome}")
+
+
+def handle_financial_case_reasoning_review(case_id, reasoning_id, decision):
+    conn = get_db_connection()
+    try:
+        outcome = review_financial_case_reasoning(conn, case_id, reasoning_id, decision, ADMIN_USERNAME)
+        if outcome in {"approved", "rejected", "stale_reasoning"}:
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        conn.rollback()
+        outcome = "approval_failed" if decision == "APPROVED" else "rejection_failed"
+    finally:
+        conn.close()
+
+    return financial_reasoning_review_redirect(case_id, outcome)
 
 
 def user_logged_in():
@@ -1028,25 +1177,44 @@ def init_db():
         CREATE TABLE IF NOT EXISTS case_reasoning (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             case_id INTEGER NOT NULL,
+            evidence_snapshot_id INTEGER,
             hypothesis TEXT NOT NULL DEFAULT '',
+            risk_tier TEXT NOT NULL DEFAULT 'Unscored',
             risk_score REAL NOT NULL DEFAULT 0,
             confidence REAL NOT NULL DEFAULT 0,
             chosen_action TEXT NOT NULL DEFAULT '',
             rejected_alternatives TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
+            requires_human_approval INTEGER NOT NULL DEFAULT 1,
+            reasoning_summary TEXT NOT NULL DEFAULT '',
+            analysis_source TEXT NOT NULL DEFAULT 'deterministic_v1',
+            approval_state TEXT NOT NULL DEFAULT 'PENDING',
+            reviewed_at TEXT NOT NULL DEFAULT '',
+            reviewed_by TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY(evidence_snapshot_id) REFERENCES case_evidence(id),
             FOREIGN KEY(case_id) REFERENCES financial_case(id)
         )
         """
     )
     
-    # Phase 2: AI Architecture Database Schema Updates (Safe ALTER statements for backward compatibility)
+    # Phase 2/3: AI architecture and approval metadata updates.
     case_reasoning_cols = [row["name"] for row in conn.execute("PRAGMA table_info(case_reasoning)").fetchall()]
+    if "evidence_snapshot_id" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN evidence_snapshot_id INTEGER")
+    if "risk_tier" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN risk_tier TEXT NOT NULL DEFAULT 'Unscored'")
     if "requires_human_approval" not in case_reasoning_cols:
         conn.execute("ALTER TABLE case_reasoning ADD COLUMN requires_human_approval INTEGER NOT NULL DEFAULT 1")
     if "reasoning_summary" not in case_reasoning_cols:
         conn.execute("ALTER TABLE case_reasoning ADD COLUMN reasoning_summary TEXT NOT NULL DEFAULT ''")
     if "analysis_source" not in case_reasoning_cols:
         conn.execute("ALTER TABLE case_reasoning ADD COLUMN analysis_source TEXT NOT NULL DEFAULT 'deterministic_v1'")
+    if "approval_state" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN approval_state TEXT NOT NULL DEFAULT 'APPROVED'")
+    if "reviewed_at" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN reviewed_at TEXT NOT NULL DEFAULT ''")
+    if "reviewed_by" not in case_reasoning_cols:
+        conn.execute("ALTER TABLE case_reasoning ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''")
 
     conn.execute(
         """
@@ -1065,6 +1233,7 @@ def init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_case_order ON financial_case(order_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_evidence_case ON case_evidence(case_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_reasoning_case ON case_reasoning(case_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_case_reasoning_approval ON case_reasoning(case_id, approval_state)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_action_case ON case_action(case_id)")
 
     conn.execute(
@@ -2353,6 +2522,7 @@ def admin_financial_case_detail(case_id):
         "SELECT * FROM case_reasoning WHERE case_id = ? ORDER BY id DESC",
         (case_id,),
     ).fetchall()
+    latest_reasoning_id = latest_approvable_reasoning_id(conn, case_id)
     actions = conn.execute(
         "SELECT * FROM case_action WHERE case_id = ? ORDER BY id DESC",
         (case_id,),
@@ -2375,7 +2545,7 @@ def admin_financial_case_detail(case_id):
     order = normalize_datetime_fields(order, ["time", "status_time"])
     timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
     evidence = [normalize_datetime_fields(item, ["captured_at"]) for item in evidence]
-    reasoning = [normalize_datetime_fields(item, ["created_at"]) for item in reasoning]
+    reasoning = [normalize_datetime_fields(item, ["created_at", "reviewed_at"]) for item in reasoning]
     actions = [normalize_datetime_fields(item, ["created_at"]) for item in actions]
     logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
 
@@ -2388,6 +2558,7 @@ def admin_financial_case_detail(case_id):
         timeline=timeline,
         evidence=evidence,
         reasoning=reasoning,
+        latest_reasoning_id=latest_reasoning_id,
         actions=actions,
         logs=logs,
         case_statuses=FINANCIAL_CASE_STATUSES,
@@ -2483,6 +2654,18 @@ def admin_run_financial_case_analysis(case_id):
     return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?analysis=1")
 
 
+@app.route("/admin/finance/case/<int:case_id>/reasoning/<int:reasoning_id>/approve", methods=["POST"])
+@login_required_admin
+def admin_approve_financial_case_reasoning(case_id, reasoning_id):
+    return handle_financial_case_reasoning_review(case_id, reasoning_id, "APPROVED")
+
+
+@app.route("/admin/finance/case/<int:case_id>/reasoning/<int:reasoning_id>/reject", methods=["POST"])
+@login_required_admin
+def admin_reject_financial_case_reasoning(case_id, reasoning_id):
+    return handle_financial_case_reasoning_review(case_id, reasoning_id, "REJECTED")
+
+
 @app.route("/admin/finance/case/<int:case_id>/evidence", methods=["POST"])
 @login_required_admin
 def admin_capture_financial_case_evidence(case_id):
@@ -2523,6 +2706,7 @@ def admin_add_financial_case_reasoning(case_id):
     hypothesis = (request.form.get("hypothesis") or "").strip()
     chosen_action = (request.form.get("chosen_action") or "").strip()
     rejected_alternatives = (request.form.get("rejected_alternatives") or "").strip()
+    risk_tier = normalize_risk_tier(request.form.get("risk_tier"), "Unscored")
     risk_score = parse_percentage(request.form.get("risk_score"), 0.0)
     confidence = parse_percentage(request.form.get("confidence"), 0.0)
 
@@ -2539,15 +2723,18 @@ def admin_add_financial_case_reasoning(case_id):
     conn.execute(
         """
         INSERT INTO case_reasoning (
-            case_id, hypothesis, risk_score, confidence,
+            case_id, evidence_snapshot_id, hypothesis, risk_tier, risk_score, confidence,
             chosen_action, rejected_alternatives, created_at,
-            requires_human_approval, reasoning_summary, analysis_source
+            requires_human_approval, reasoning_summary, analysis_source,
+            approval_state, reviewed_at, reviewed_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             case_id,
+            None,
             hypothesis,
+            risk_tier,
             risk_score,
             confidence,
             chosen_action,
@@ -2555,7 +2742,10 @@ def admin_add_financial_case_reasoning(case_id):
             created_at,
             0,  # Manual intervention doesn't "require" human approval because it IS human.
             "Manual admin reasoning.",
-            "admin_manual"
+            "admin_manual",
+            "APPROVED",
+            created_at,
+            ADMIN_USERNAME,
         ),
     )
     conn.execute("UPDATE financial_case SET updated_at = ? WHERE id = ?", (created_at, case_id))

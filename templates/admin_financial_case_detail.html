@@ -48,6 +48,7 @@
     .btn.secondary { background: #0f766e; }
     .btn.ghost { background: #334155; }
     .btn.warn, button.warn { background: #b45309; }
+    .btn.danger, button.danger { background: #b91c1c; }
     .section {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
@@ -136,6 +137,9 @@
     .risk-medium { background: #fef3c7; color: #92400e; }
     .risk-high { background: #ffedd5; color: #9a3412; }
     .risk-critical { background: #fee2e2; color: #991b1b; }
+    .approval-pending { background: #fef3c7; color: #92400e; }
+    .approval-approved { background: #dcfce7; color: #166534; }
+    .approval-rejected { background: #fee2e2; color: #991b1b; }
     details {
       border: 1px solid #e2e8f0;
       border-radius: 8px;
@@ -162,6 +166,7 @@
       align-items: center;
     }
     .actions form { margin: 0; }
+    .review-actions button { padding: 7px 10px; font-size: 12px; }
     .empty {
       padding: 14px;
       border: 1px dashed #cbd5e1;
@@ -203,7 +208,11 @@
     {% elif request.args.get('reasoning') %}
       <div class="msg ok">Reasoning saved.</div>
     {% elif request.args.get('analysis') %}
-      <div class="msg ok">Deterministic analysis completed and saved.</div>
+      <div class="msg ok">Analysis saved as a pending recommendation. The live case is unchanged until approval.</div>
+    {% elif request.args.get('approved') %}
+      <div class="msg ok">Recommendation approved and applied to the live case.</div>
+    {% elif request.args.get('rejected') %}
+      <div class="msg ok">Recommendation rejected. The live case risk values were not changed.</div>
     {% elif request.args.get('action') %}
       <div class="msg ok">Action recorded.</div>
     {% elif request.args.get('error') == 'empty_reasoning' %}
@@ -212,6 +221,20 @@
       <div class="msg err">Action type and outcome are required.</div>
     {% elif request.args.get('error') == 'evidence_failed' %}
       <div class="msg err">Evidence could not be captured for this order.</div>
+    {% elif request.args.get('error') == 'reasoning_not_found' %}
+      <div class="msg err">That reasoning record is not available.</div>
+    {% elif request.args.get('error') == 'reasoning_case_mismatch' %}
+      <div class="msg err">That reasoning record does not belong to this financial case.</div>
+    {% elif request.args.get('error') == 'reasoning_not_approvable' %}
+      <div class="msg err">That reasoning record is not an AI recommendation awaiting review.</div>
+    {% elif request.args.get('error') == 'reasoning_not_pending' %}
+      <div class="msg err">Only pending recommendations can be reviewed.</div>
+    {% elif request.args.get('error') == 'stale_reasoning' %}
+      <div class="msg err">That recommendation is stale because a newer AI recommendation exists.</div>
+    {% elif request.args.get('error') == 'approval_failed' %}
+      <div class="msg err">Approval failed, so no case changes were saved.</div>
+    {% elif request.args.get('error') == 'rejection_failed' %}
+      <div class="msg err">Rejection failed, so no review changes were saved.</div>
     {% endif %}
 
     <div class="grid">
@@ -305,6 +328,14 @@
       <h3>Reasoning</h3>
       <div class="form-grid">
         <div>
+          <label for="reasoning_risk_tier">Risk Tier</label>
+          <select id="reasoning_risk_tier" name="risk_tier">
+            {% for tier in risk_tiers %}
+              <option value="{{ tier }}" {% if case.risk_tier == tier %}selected{% endif %}>{{ tier }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
           <label for="reasoning_score">Risk Score</label>
           <input id="reasoning_score" name="risk_score" type="number" min="0" max="100" step="0.1" value="0">
         </div>
@@ -328,28 +359,75 @@
         </div>
       </div>
       <button type="submit" style="margin-top:10px;">Save Reasoning</button>
+    </form>
 
+    <div class="section">
+      <h3>Reasoning Records</h3>
       {% if reasoning %}
         <div class="table-wrap" style="margin-top:12px;">
           <table>
             <tr>
               <th>ID</th>
+              <th>Source</th>
+              <th>Recommendation</th>
+              <th>Approval</th>
               <th>Hypothesis</th>
-              <th>Score</th>
-              <th>Confidence</th>
               <th>Chosen Action</th>
               <th>Rejected</th>
+              <th>Evidence</th>
+              <th>Reviewed</th>
               <th>Time</th>
+              <th>Review</th>
             </tr>
             {% for item in reasoning %}
               <tr>
                 <td>#{{ item.id }}</td>
+                <td>
+                  {{ item.analysis_source or '-' }}<br>
+                  <span class="meta">{{ item.reasoning_summary or '-' }}</span>
+                </td>
+                <td>
+                  <span class="pill risk-{{ item.risk_tier|lower }}">{{ item.risk_tier }}</span><br>
+                  <span class="meta">{{ '%.1f'|format(item.risk_score or 0) }} / {{ '%.1f'|format(item.confidence or 0) }}%</span>
+                </td>
+                <td>
+                  <span class="pill approval-{{ item.approval_state|lower }}">{{ item.approval_state }}</span>
+                  {% if item.approval_state == 'PENDING' and item.id != latest_reasoning_id %}
+                    <br><span class="meta">Stale recommendation</span>
+                  {% endif %}
+                </td>
                 <td>{{ item.hypothesis or '-' }}</td>
-                <td>{{ '%.1f'|format(item.risk_score or 0) }}</td>
-                <td>{{ '%.1f'|format(item.confidence or 0) }}%</td>
                 <td>{{ item.chosen_action or '-' }}</td>
                 <td>{{ item.rejected_alternatives or '-' }}</td>
+                <td>
+                  {% if item.evidence_snapshot_id %}
+                    #{{ item.evidence_snapshot_id }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>
+                  {% if item.reviewed_by %}
+                    {{ item.reviewed_by }}<br><span class="meta">{{ item.reviewed_at }}</span>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
                 <td>{{ item.created_at }}</td>
+                <td>
+                  {% if item.approval_state == 'PENDING' %}
+                    <div class="actions review-actions">
+                      <form method="POST" action="{{ url_for('admin_approve_financial_case_reasoning', case_id=case.id, reasoning_id=item.id) }}">
+                        <button type="submit" class="warn">Approve</button>
+                      </form>
+                      <form method="POST" action="{{ url_for('admin_reject_financial_case_reasoning', case_id=case.id, reasoning_id=item.id) }}">
+                        <button type="submit" class="danger">Reject</button>
+                      </form>
+                    </div>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
               </tr>
             {% endfor %}
           </table>
@@ -357,7 +435,7 @@
       {% else %}
         <div class="empty" style="margin-top:12px;">No reasoning records yet.</div>
       {% endif %}
-    </form>
+    </div>
 
     <form method="POST" action="{{ url_for('admin_add_financial_case_action', case_id=case.id) }}" class="section">
       <h3>Action Timeline</h3>
