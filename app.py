@@ -107,6 +107,15 @@ def parse_order_datetime(order_time):
         return parsed
 
 
+def is_follow_up_overdue(follow_up_due_at, now_dt=None):
+    """Missing/unparseable follow_up_due_at is never overdue (matches the
+    datetime.min sentinel already used by admin_finance() for the same check)."""
+    if now_dt is None:
+        now_dt = current_local_datetime()
+    due = parse_order_datetime(follow_up_due_at)
+    return due != datetime.min and due <= now_dt
+
+
 def format_display_datetime(order_time):
     parsed = parse_order_datetime(order_time)
     if parsed == datetime.min:
@@ -181,6 +190,21 @@ def record_audit(conn, actor_type, actor_name, action, details=""):
         VALUES (?, ?, ?, ?, ?)
         """,
         (actor_type, actor_name, action, details, now_string()),
+    )
+
+
+def record_ai_analysis_failure(conn, case_id, initiated_by, trigger, reason):
+    """Persist a Gemini/validation failure via the existing case_action table so it
+    survives a restart, instead of only being printed to the server log. Uses the
+    same insertion shape as every other case_action write in this module. `reason`
+    must already have any secrets redacted by the caller."""
+    outcome = f"AI analysis fallback to deterministic scoring (trigger={trigger}). {reason}"
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (case_id, "ai_analysis_fallback", initiated_by, outcome[:500], now_string()),
     )
 
 
@@ -535,6 +559,17 @@ def evaluate_financial_case(order, finance_items, evidence_rows):
     }
 
 
+def redact_secret(text, secret):
+    """Strip a known secret value (e.g. an API key embedded in a request URL)
+    out of any failure text before it is ever persisted or logged further."""
+    if not text:
+        return ""
+    text = str(text)
+    if secret:
+        text = text.replace(secret, "[REDACTED]")
+    return text
+
+
 def call_gemini_api(prompt, api_key, model_name):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
@@ -745,10 +780,19 @@ def analyze_financial_case(conn, case_id, initiated_by=ADMIN_USERNAME, trigger="
                 }
             else:
                 print("WARNING: AI Validation Failed. Safely falling back to deterministic.")
+                record_ai_analysis_failure(
+                    conn, case_id, initiated_by, trigger,
+                    "Reason: AI response failed schema validation.",
+                )
                 result = None
                 
         except Exception as e:
-            print(f"WARNING: AI Analysis Failed ({e}). Safely falling back to deterministic.")
+            failure_reason = redact_secret(str(e), gemini_key)
+            print(f"WARNING: AI Analysis Failed ({failure_reason}). Safely falling back to deterministic.")
+            record_ai_analysis_failure(
+                conn, case_id, initiated_by, trigger,
+                f"Reason: {failure_reason}",
+            )
             result = None
 
     # Deterministic fallback seamlessly covers validation failures, connection issues, or missing API keys.
@@ -2406,8 +2450,7 @@ def admin_finance():
     due_followups = [
         case
         for case in active_cases
-        if parse_order_datetime(case["follow_up_due_at"]) != datetime.min
-        and parse_order_datetime(case["follow_up_due_at"]) <= now_dt
+        if is_follow_up_overdue(case["follow_up_due_at"], now_dt)
     ]
     finance_stats = {
         "total": len(all_cases),
@@ -2420,7 +2463,7 @@ def admin_finance():
 
     cases = [
         normalize_datetime_fields(
-            case,
+            dict(case, is_follow_up_overdue=is_follow_up_overdue(case["follow_up_due_at"], now_dt)),
             ["created_at", "updated_at", "resolved_at", "follow_up_due_at", "order_time"],
         )
         for case in cases
@@ -2539,7 +2582,7 @@ def admin_financial_case_detail(case_id):
     conn.close()
 
     case = normalize_datetime_fields(
-        case,
+        dict(case, is_follow_up_overdue=is_follow_up_overdue(case["follow_up_due_at"])),
         ["created_at", "updated_at", "resolved_at", "follow_up_due_at", "order_time", "order_status_time"],
     )
     order = normalize_datetime_fields(order, ["time", "status_time"])

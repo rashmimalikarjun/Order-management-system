@@ -313,5 +313,200 @@ class Phase3FinancialApprovalTests(unittest.TestCase):
         conn.close()
 
 
+class Phase4FollowUpAndFailureTests(unittest.TestCase):
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        oms.DATABASE = self.db_path
+        oms.app.config.update(TESTING=True, SECRET_KEY="test-secret")
+        os.environ.pop("GEMINI_API_KEY", None)
+        oms.init_db()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+        os.environ.pop("GEMINI_API_KEY", None)
+
+    def connect(self):
+        return oms.get_db_connection()
+
+    def login_admin(self, client):
+        with client.session_transaction() as sess:
+            sess["admin_logged_in"] = True
+
+    def create_order(self, conn, status="Delivered", payment_status="Pending", total_price=120.0):
+        now = oms.now_string()
+        cursor = conn.execute(
+            """
+            INSERT INTO orders (
+                username, menu, quantity, time, status, status_time,
+                total_price, payment_method, payment_status, payment_reference,
+                contact_number, payment_proof_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "alice", "Veg Meal", 1, now, status, now,
+                total_price, "UPI QR", payment_status, "", "5550100", "",
+            ),
+        )
+        return cursor.lastrowid
+
+    def create_case(self):
+        conn = self.connect()
+        order_id = self.create_order(conn)
+        case_id, outcome = oms.create_financial_case_for_order(conn, order_id, "admin")
+        self.assertEqual(outcome, "created")
+        conn.commit()
+        conn.close()
+        return case_id, order_id
+
+    def case_row(self, conn, case_id):
+        return conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+
+    def set_follow_up(self, conn, case_id, follow_up_due_at):
+        conn.execute(
+            "UPDATE financial_case SET follow_up_due_at = ? WHERE id = ?",
+            (follow_up_due_at, case_id),
+        )
+
+    # ---- Follow-up visibility ----
+
+    def test_past_follow_up_is_overdue(self):
+        past = (oms.current_local_datetime() - oms.timedelta(days=2)).strftime(oms.DISPLAY_DATETIME_FORMAT)
+        self.assertTrue(oms.is_follow_up_overdue(past))
+
+    def test_future_follow_up_is_not_overdue(self):
+        future = (oms.current_local_datetime() + oms.timedelta(days=2)).strftime(oms.DISPLAY_DATETIME_FORMAT)
+        self.assertFalse(oms.is_follow_up_overdue(future))
+
+    def test_missing_follow_up_is_not_overdue(self):
+        self.assertFalse(oms.is_follow_up_overdue(""))
+        self.assertFalse(oms.is_follow_up_overdue(None))
+
+    def test_unparseable_follow_up_is_not_overdue(self):
+        self.assertFalse(oms.is_follow_up_overdue("not-a-real-date"))
+
+    def test_dashboard_flags_overdue_case_without_changing_status_or_escalating(self):
+        case_id, _ = self.create_case()
+        conn = self.connect()
+        past = (oms.current_local_datetime() - oms.timedelta(days=1)).strftime(oms.DISPLAY_DATETIME_FORMAT)
+        self.set_follow_up(conn, case_id, past)
+        conn.commit()
+        before = self.case_row(conn, case_id)
+        conn.close()
+
+        client = oms.app.test_client()
+        self.login_admin(client)
+        response = client.get("/admin/finance")
+        self.assertEqual(response.status_code, 200)
+
+        conn = self.connect()
+        after = self.case_row(conn, case_id)
+        conn.close()
+        # Visibility must be read-only: status/risk fields untouched by simply viewing the dashboard.
+        self.assertEqual(before["status"], after["status"])
+        self.assertNotEqual(after["status"], "Escalated")
+        self.assertEqual(before["risk_tier"], after["risk_tier"])
+
+    def test_detail_page_flags_overdue_case_without_changing_status(self):
+        case_id, _ = self.create_case()
+        conn = self.connect()
+        past = (oms.current_local_datetime() - oms.timedelta(days=1)).strftime(oms.DISPLAY_DATETIME_FORMAT)
+        self.set_follow_up(conn, case_id, past)
+        conn.commit()
+        before = self.case_row(conn, case_id)
+        conn.close()
+
+        client = oms.app.test_client()
+        self.login_admin(client)
+        response = client.get(f"/admin/finance/case/{case_id}")
+        self.assertEqual(response.status_code, 200)
+
+        conn = self.connect()
+        after = self.case_row(conn, case_id)
+        conn.close()
+        self.assertEqual(before["status"], after["status"])
+        self.assertNotEqual(after["status"], "Escalated")
+
+    # ---- AI failure auditability ----
+
+    def test_validation_failure_persists_case_action_without_mutating_case(self):
+        case_id, _ = self.create_case()
+        conn = self.connect()
+        before = self.case_row(conn, case_id)
+        conn.close()
+
+        os.environ["GEMINI_API_KEY"] = "test-key-should-not-leak"
+        conn = self.connect()
+        with patch.object(oms, "call_gemini_api", return_value='{"not": "valid"}'), \
+             patch.object(oms, "validate_gemini_response", return_value=False):
+            result = oms.analyze_financial_case(conn, case_id, "admin", "manual")
+        conn.commit()
+
+        self.assertIsNotNone(result)
+        action = conn.execute(
+            "SELECT * FROM case_action WHERE case_id = ? AND action_type = 'ai_analysis_fallback' "
+            "ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        self.assertIsNotNone(action)
+        self.assertEqual(action["case_id"], case_id)
+        self.assertIn("schema validation", action["outcome"])
+
+        after = self.case_row(conn, case_id)
+        self.assertEqual(before["risk_tier"], after["risk_tier"])
+        self.assertEqual(before["risk_score"], after["risk_score"])
+        self.assertEqual(before["confidence"], after["confidence"])
+        conn.close()
+
+    def test_exception_failure_persists_case_action_and_redacts_key(self):
+        case_id, _ = self.create_case()
+        conn = self.connect()
+        before = self.case_row(conn, case_id)
+        conn.close()
+
+        secret = "test-key-should-not-leak"
+        os.environ["GEMINI_API_KEY"] = secret
+        conn = self.connect()
+        with patch.object(
+            oms, "call_gemini_api",
+            side_effect=RuntimeError(f"connection failed for key={secret}"),
+        ):
+            result = oms.analyze_financial_case(conn, case_id, "admin", "manual")
+        conn.commit()
+
+        self.assertIsNotNone(result)
+        action = conn.execute(
+            "SELECT * FROM case_action WHERE case_id = ? AND action_type = 'ai_analysis_fallback' "
+            "ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        self.assertIsNotNone(action)
+        self.assertEqual(action["case_id"], case_id)
+        self.assertNotIn(secret, action["outcome"])
+        self.assertIn("[REDACTED]", action["outcome"])
+
+        after = self.case_row(conn, case_id)
+        self.assertEqual(before["risk_tier"], after["risk_tier"])
+        self.assertEqual(before["risk_score"], after["risk_score"])
+        self.assertEqual(before["confidence"], after["confidence"])
+        conn.close()
+
+    def test_no_gemini_key_configured_does_not_create_failure_action(self):
+        # Missing API key is not a "failure" of the AI workflow — it's simply not attempted.
+        case_id, _ = self.create_case()
+        conn = self.connect()
+        result = oms.analyze_financial_case(conn, case_id, "admin", "manual")
+        conn.commit()
+        self.assertIsNotNone(result)
+        action = conn.execute(
+            "SELECT * FROM case_action WHERE case_id = ? AND action_type = 'ai_analysis_fallback'",
+            (case_id,),
+        ).fetchone()
+        self.assertIsNone(action)
+        conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -274,7 +274,12 @@
                   <span class="meta">{{ '%.1f'|format(case.risk_score or 0) }} / {{ '%.1f'|format(case.confidence or 0) }}%</span>
                 </td>
                 <td><span class="pill status-{{ case.status|lower }}">{{ case.status }}</span></td>
-                <td>{{ case.follow_up_due_at or '-' }}</td>
+                <td>
+                  {{ case.follow_up_due_at or '-' }}
+                  {% if case.is_follow_up_overdue %}
+                    <br><span class="pill risk-critical">Overdue</span>
+                  {% endif %}
+                </td>
                 <td>{{ case.updated_at }}</td>
                 <td class="actions">
                   <a href="{{ url_for('admin_financial_case_detail', case_id=case.id) }}" class="btn">View</a>
