@@ -1,7 +1,32 @@
 # Order Management System
 
 A Flask-based order management app for users and admins, with stock control, payments, and audit logs.
+## Development Progress
 
+### Phase 1 — Core Order Management
+- Core Flask-based order management functionality established.
+- User and admin workflows supported.
+- Stock and payment-related functionality integrated.
+- Audit logging included for important administrative operations.
+
+### Phase 2 — Financial Case Foundation
+- Financial case infrastructure introduced.
+- Financial cases connected with orders and supporting evidence.
+- Financial risk and reasoning data incorporated into the admin workflow.
+- Database changes use safe initialization/migration patterns.
+
+### Phase 3 — Financial Case Approval
+- Human approval workflow introduced for financial reasoning.
+- Financial reasoning records support approval and rejection states.
+- Approval and rejection decisions are recorded for auditability.
+- Admin financial case detail page provides the approval workflow.
+
+### Phase 4 — Follow-up Visibility & Failure Auditability
+- Follow-up due dates surfaced in the financial case workflow.
+- Overdue follow-ups are visibly flagged without automatically changing case status.
+- AI analysis failures are recorded as auditable case actions.
+- Failure handling preserves transaction rollback behavior.
+- Phase 3 and Phase 4 regression tests pass.
 ## Production Readiness
 
 This repo is now configured for deployment with:
