@@ -42,6 +42,9 @@ FINANCIAL_CASE_STATUSES = ("Open", "Investigating", "Escalated", "Resolved", "Cl
 FINANCIAL_CASE_CLOSED_STATUSES = {"Resolved", "Closed"}
 FINANCIAL_RISK_TIERS = ("Unscored", "Low", "Medium", "High", "Critical")
 REASONING_APPROVAL_STATES = ("PENDING", "APPROVED", "REJECTED")
+# Phase 5: lifecycle states for case_action rows. Existing rows (Phase 2-4) default
+# to "completed" since they always represented a finished, one-shot event.
+CASE_ACTION_STATUSES = ("pending", "completed", "overridden")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PAYMENT_PROOF_UPLOAD_FOLDER, exist_ok=True)
@@ -957,6 +960,10 @@ def review_financial_case_reasoning(conn, case_id, reasoning_id, decision, revie
         """,
         (case_id, action_type, reviewer, outcome, reviewed_at),
     )
+    if decision == "APPROVED":
+        # Phase 5: approving reasoning queues its recommended action for controlled,
+        # mocked/internal dispatch instead of applying it automatically.
+        queue_controlled_action(conn, case_id, reasoning["chosen_action"], reviewer, reviewed_at)
     record_audit(
         conn,
         "admin",
@@ -996,6 +1003,180 @@ def handle_financial_case_reasoning_review(case_id, reasoning_id, decision):
         conn.close()
 
     return financial_reasoning_review_redirect(case_id, outcome)
+
+
+# ==========================================
+# PHASE 5: CONTROLLED ACTION + FOLLOW-UP LIFECYCLE
+# Mocked/internal dispatch only. No refunds, payments, notifications, or
+# external integrations. Every transition is auditable and admin-initiated.
+# ==========================================
+
+def queue_controlled_action(conn, case_id, chosen_action, initiated_by, created_at):
+    """Queue the recommended action from an approved reasoning as a pending,
+    controlled case_action. Nothing is dispatched automatically."""
+    if not chosen_action:
+        return None
+    cursor = conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (case_id, "controlled_action_queued", initiated_by, chosen_action, created_at, "pending", ""),
+    )
+    return cursor.lastrowid
+
+
+def dispatch_case_action(conn, case_id, action_id, reviewer):
+    """Mock/internal dispatch of a pending action: pending -> completed."""
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return "case_not_found"
+
+    action = conn.execute("SELECT * FROM case_action WHERE id = ?", (action_id,)).fetchone()
+    if action is None:
+        return "action_not_found"
+    if action["case_id"] != case_id:
+        return "action_case_mismatch"
+    if action["status"] != "pending":
+        return "action_not_pending"
+
+    dispatched_at = now_string()
+    outcome = f"{action['outcome']} | Dispatched (mocked/internal) by {reviewer}."
+    conn.execute(
+        "UPDATE case_action SET status = ?, outcome = ?, updated_at = ? WHERE id = ?",
+        ("completed", outcome, dispatched_at, action_id),
+    )
+    record_audit(
+        conn,
+        "admin",
+        reviewer,
+        "financial_case_action_dispatched",
+        f"financial_case_id={case_id}, action_id={action_id}, order_id={case['order_id']}",
+    )
+    return "dispatched"
+
+
+def override_case_action(conn, case_id, action_id, reason, reviewer):
+    """Explicit human override of a pending action: pending -> overridden.
+    Requires a stated reason for a full audit trail."""
+    if not reason:
+        return "empty_override_reason"
+
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return "case_not_found"
+
+    action = conn.execute("SELECT * FROM case_action WHERE id = ?", (action_id,)).fetchone()
+    if action is None:
+        return "action_not_found"
+    if action["case_id"] != case_id:
+        return "action_case_mismatch"
+    if action["status"] != "pending":
+        return "action_not_pending"
+
+    overridden_at = now_string()
+    outcome = f"{action['outcome']} | Overridden by {reviewer}: {reason}"
+    conn.execute(
+        "UPDATE case_action SET status = ?, outcome = ?, updated_at = ? WHERE id = ?",
+        ("overridden", outcome, overridden_at, action_id),
+    )
+    record_audit(
+        conn,
+        "admin",
+        reviewer,
+        "financial_case_action_overridden",
+        f"financial_case_id={case_id}, action_id={action_id}, order_id={case['order_id']}, reason={reason}",
+    )
+    return "overridden"
+
+
+def complete_case_follow_up(conn, case_id, reviewer):
+    """Mark the case's current follow-up as done. Clears follow_up_due_at, which
+    is_follow_up_overdue() already treats as not-overdue."""
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return "case_not_found"
+    if not case["follow_up_due_at"]:
+        return "no_follow_up_to_complete"
+
+    completed_at = now_string()
+    previous_due = case["follow_up_due_at"]
+    conn.execute(
+        "UPDATE financial_case SET follow_up_due_at = ?, updated_at = ? WHERE id = ?",
+        ("", completed_at, case_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            case_id,
+            "follow_up_completed",
+            reviewer,
+            f"Follow-up due {previous_due} marked complete.",
+            completed_at,
+            "completed",
+            completed_at,
+        ),
+    )
+    record_audit(
+        conn,
+        "admin",
+        reviewer,
+        "financial_case_follow_up_completed",
+        f"financial_case_id={case_id}, order_id={case['order_id']}, previous_due={previous_due}",
+    )
+    return "followup_completed"
+
+
+def escalate_financial_case(conn, case_id, reason, reviewer):
+    """Guarded escalation: blocked once a case is already Escalated or closed.
+    Requires a stated reason. Distinct from the general-purpose status dropdown."""
+    if not reason:
+        return "empty_escalation_reason"
+
+    case = conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+    if case is None:
+        return "case_not_found"
+    if case["status"] == "Escalated" or case["status"] in FINANCIAL_CASE_CLOSED_STATUSES:
+        return "escalation_blocked"
+
+    escalated_at = now_string()
+    previous_status = case["status"]
+    conn.execute(
+        "UPDATE financial_case SET status = ?, updated_at = ? WHERE id = ?",
+        ("Escalated", escalated_at, case_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO case_action (case_id, action_type, initiated_by, outcome, created_at, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (case_id, "case_escalated", reviewer, reason, escalated_at, "completed", escalated_at),
+    )
+    record_audit(
+        conn,
+        "admin",
+        reviewer,
+        "financial_case_escalated",
+        f"financial_case_id={case_id}, order_id={case['order_id']}, reason={reason}, previous_status={previous_status}",
+    )
+    return "escalated"
+
+
+def financial_case_action_redirect(case_id, outcome):
+    success_params = {
+        "dispatched": "dispatched=1",
+        "overridden": "overridden=1",
+        "followup_completed": "followup_completed=1",
+        "escalated": "escalated=1",
+    }
+    if outcome in success_params:
+        return redirect(url_for("admin_financial_case_detail", case_id=case_id) + f"?{success_params[outcome]}")
+    if outcome == "case_not_found":
+        return redirect(url_for("admin_finance") + "?error=case_not_found")
+    return redirect(url_for("admin_financial_case_detail", case_id=case_id) + f"?error={outcome}")
 
 
 def user_logged_in():
@@ -1273,12 +1454,25 @@ def init_db():
         )
         """
     )
+
+    # Phase 5: action/follow-up lifecycle. Every pre-existing case_action row
+    # (case_created, evidence_captured, reasoning_recorded, reasoning_approved,
+    # reasoning_rejected, ai_analysis_fallback, manual actions) already represented
+    # a finished, one-shot event, so they default to "completed" and keep their
+    # existing meaning unchanged.
+    case_action_cols = [row["name"] for row in conn.execute("PRAGMA table_info(case_action)").fetchall()]
+    if "status" not in case_action_cols:
+        conn.execute("ALTER TABLE case_action ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
+    if "updated_at" not in case_action_cols:
+        conn.execute("ALTER TABLE case_action ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+
     conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_case_status ON financial_case(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_case_order ON financial_case(order_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_evidence_case ON case_evidence(case_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_reasoning_case ON case_reasoning(case_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_reasoning_approval ON case_reasoning(case_id, approval_state)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_case_action_case ON case_action(case_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_case_action_status ON case_action(case_id, status)")
 
     conn.execute(
         """
@@ -2589,7 +2783,7 @@ def admin_financial_case_detail(case_id):
     timeline = [normalize_datetime_fields(item, ["changed_at"]) for item in timeline]
     evidence = [normalize_datetime_fields(item, ["captured_at"]) for item in evidence]
     reasoning = [normalize_datetime_fields(item, ["created_at", "reviewed_at"]) for item in reasoning]
-    actions = [normalize_datetime_fields(item, ["created_at"]) for item in actions]
+    actions = [normalize_datetime_fields(item, ["created_at", "updated_at"]) for item in actions]
     logs = [normalize_datetime_fields(log, ["created_at"]) for log in logs]
 
     return render_template(
@@ -2844,6 +3038,80 @@ def admin_add_financial_case_action(case_id):
     conn.commit()
     conn.close()
     return redirect(url_for("admin_financial_case_detail", case_id=case_id) + "?action=1")
+
+
+@app.route("/admin/finance/case/<int:case_id>/action/<int:action_id>/dispatch", methods=["POST"])
+@login_required_admin
+def admin_dispatch_case_action(case_id, action_id):
+    conn = get_db_connection()
+    try:
+        outcome = dispatch_case_action(conn, case_id, action_id, ADMIN_USERNAME)
+        if outcome == "dispatched":
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        conn.rollback()
+        outcome = "dispatch_failed"
+    finally:
+        conn.close()
+    return financial_case_action_redirect(case_id, outcome)
+
+
+@app.route("/admin/finance/case/<int:case_id>/action/<int:action_id>/override", methods=["POST"])
+@login_required_admin
+def admin_override_case_action(case_id, action_id):
+    reason = (request.form.get("reason") or "").strip()
+    conn = get_db_connection()
+    try:
+        outcome = override_case_action(conn, case_id, action_id, reason, ADMIN_USERNAME)
+        if outcome == "overridden":
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        conn.rollback()
+        outcome = "override_failed"
+    finally:
+        conn.close()
+    return financial_case_action_redirect(case_id, outcome)
+
+
+@app.route("/admin/finance/case/<int:case_id>/follow-up/complete", methods=["POST"])
+@login_required_admin
+def admin_complete_case_follow_up(case_id):
+    conn = get_db_connection()
+    try:
+        outcome = complete_case_follow_up(conn, case_id, ADMIN_USERNAME)
+        if outcome == "followup_completed":
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        conn.rollback()
+        outcome = "followup_complete_failed"
+    finally:
+        conn.close()
+    return financial_case_action_redirect(case_id, outcome)
+
+
+@app.route("/admin/finance/case/<int:case_id>/escalate", methods=["POST"])
+@login_required_admin
+def admin_escalate_financial_case(case_id):
+    reason = (request.form.get("reason") or "").strip()
+    conn = get_db_connection()
+    try:
+        outcome = escalate_financial_case(conn, case_id, reason, ADMIN_USERNAME)
+        if outcome == "escalated":
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        conn.rollback()
+        outcome = "escalation_failed"
+    finally:
+        conn.close()
+    return financial_case_action_redirect(case_id, outcome)
 
 # ==========================================
 # WEBSITE CONTENT (CMS) - HERO SECTION
