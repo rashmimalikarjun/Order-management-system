@@ -210,6 +210,14 @@
       <div class="msg ok">Reasoning approved and applied to the case.</div>
     {% elif request.args.get('rejected') %}
       <div class="msg ok">Reasoning rejected. Case fields were not changed.</div>
+    {% elif request.args.get('dispatched') %}
+      <div class="msg ok">Action dispatched (mocked/internal).</div>
+    {% elif request.args.get('overridden') %}
+      <div class="msg ok">Action overridden.</div>
+    {% elif request.args.get('followup_completed') %}
+      <div class="msg ok">Follow-up marked complete.</div>
+    {% elif request.args.get('escalated') %}
+      <div class="msg ok">Case escalated.</div>
     {% elif request.args.get('error') == 'empty_reasoning' %}
       <div class="msg err">Add a hypothesis, chosen action, or rejected alternative before saving reasoning.</div>
     {% elif request.args.get('error') == 'empty_action' %}
@@ -230,6 +238,28 @@
       <div class="msg err">Approval could not be completed. Nothing was changed.</div>
     {% elif request.args.get('error') == 'rejection_failed' %}
       <div class="msg err">Rejection could not be completed. Nothing was changed.</div>
+    {% elif request.args.get('error') == 'action_not_found' %}
+      <div class="msg err">That action could not be found.</div>
+    {% elif request.args.get('error') == 'action_case_mismatch' %}
+      <div class="msg err">That action does not belong to this case.</div>
+    {% elif request.args.get('error') == 'action_not_pending' %}
+      <div class="msg err">That action is no longer pending.</div>
+    {% elif request.args.get('error') == 'empty_override_reason' %}
+      <div class="msg err">A reason is required to override an action.</div>
+    {% elif request.args.get('error') == 'dispatch_failed' %}
+      <div class="msg err">Dispatch could not be completed. Nothing was changed.</div>
+    {% elif request.args.get('error') == 'override_failed' %}
+      <div class="msg err">Override could not be completed. Nothing was changed.</div>
+    {% elif request.args.get('error') == 'no_follow_up_to_complete' %}
+      <div class="msg err">There is no follow-up due date set on this case.</div>
+    {% elif request.args.get('error') == 'followup_complete_failed' %}
+      <div class="msg err">Follow-up could not be marked complete. Nothing was changed.</div>
+    {% elif request.args.get('error') == 'empty_escalation_reason' %}
+      <div class="msg err">A reason is required to escalate a case.</div>
+    {% elif request.args.get('error') == 'escalation_blocked' %}
+      <div class="msg err">This case is already escalated or closed and cannot be escalated again.</div>
+    {% elif request.args.get('error') == 'escalation_failed' %}
+      <div class="msg err">Escalation could not be completed. Nothing was changed.</div>
     {% endif %}
 
     <div class="grid">
@@ -244,7 +274,19 @@
             <span class="pill risk-critical">Overdue</span>
           {% endif %}
         </p>
+        {% if case.follow_up_due_at %}
+          <form method="POST" action="{{ url_for('admin_complete_case_follow_up', case_id=case.id) }}" style="margin-top:6px;">
+            <button type="submit" class="btn secondary" style="padding:6px 10px; font-size:12px;">Mark Follow-up Complete</button>
+          </form>
+        {% endif %}
         <p><strong>Resolved:</strong> {{ case.resolved_at or '-' }}</p>
+        {% if case.status not in ['Escalated', 'Resolved', 'Closed'] %}
+          <form method="POST" action="{{ url_for('admin_escalate_financial_case', case_id=case.id) }}" style="margin-top:6px;">
+            <label for="escalation_reason">Escalation Reason</label>
+            <input id="escalation_reason" name="reason" type="text" placeholder="Reason for escalation" required style="width:100%; margin-bottom:6px;">
+            <button type="submit" class="btn warn" style="padding:6px 10px; font-size:12px;">Escalate Case</button>
+          </form>
+        {% endif %}
       </div>
       <div class="summary-box">
         <h3>Order</h3>
@@ -415,7 +457,7 @@
     </div>
 
     <form method="POST" action="{{ url_for('admin_add_financial_case_action', case_id=case.id) }}" class="section">
-      <h3>Action Timeline</h3>
+      <h3>Record Manual Action</h3>
       <div class="form-grid">
         <div>
           <label for="action_type">Action Type</label>
@@ -433,16 +475,21 @@
         </div>
         <button type="submit">Record Action</button>
       </div>
+    </form>
 
+    <div class="section">
+      <h3>Action Timeline</h3>
       {% if actions %}
-        <div class="table-wrap" style="margin-top:12px;">
+        <div class="table-wrap">
           <table>
             <tr>
               <th>ID</th>
               <th>Action</th>
               <th>Initiated By</th>
               <th>Outcome</th>
+              <th>Status</th>
               <th>Time</th>
+              <th>Controls</th>
             </tr>
             {% for action in actions %}
               <tr>
@@ -450,15 +497,37 @@
                 <td>{{ action.action_type }}</td>
                 <td>{{ action.initiated_by }}</td>
                 <td>{{ action.outcome }}</td>
+                <td>
+                  {% if action.status == 'pending' %}
+                    <span class="pill status-investigating">Pending</span>
+                  {% elif action.status == 'overridden' %}
+                    <span class="pill status-escalated">Overridden</span>
+                  {% else %}
+                    <span class="pill status-resolved">Completed</span>
+                  {% endif %}
+                </td>
                 <td>{{ action.created_at }}</td>
+                <td>
+                  {% if action.status == 'pending' %}
+                    <form method="POST" action="{{ url_for('admin_dispatch_case_action', case_id=case.id, action_id=action.id) }}" style="margin-bottom:6px;">
+                      <button type="submit" class="btn secondary" style="padding:6px 10px; font-size:12px;">Dispatch</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_override_case_action', case_id=case.id, action_id=action.id) }}">
+                      <input name="reason" type="text" placeholder="Override reason" required style="width:100%; margin-bottom:4px;">
+                      <button type="submit" class="btn warn" style="padding:6px 10px; font-size:12px;">Override</button>
+                    </form>
+                  {% else %}
+                    <span class="meta">-</span>
+                  {% endif %}
+                </td>
               </tr>
             {% endfor %}
           </table>
         </div>
       {% else %}
-        <div class="empty" style="margin-top:12px;">No case actions yet.</div>
+        <div class="empty">No case actions yet.</div>
       {% endif %}
-    </form>
+    </div>
 
     <div class="section">
       <h3>Order Items</h3>
