@@ -556,5 +556,142 @@ class Phase5UIWiringTests(unittest.TestCase):
         self.assertIn(f"/admin/finance/case/{case_id}/follow-up/complete", with_due_date)
 
 
+class Phase5LifecycleRiskFieldGuardTests(unittest.TestCase):
+    """Covers a gap found after Phase 5: the generic Lifecycle 'Save Case' form could
+    previously overwrite risk_tier/risk_score/confidence directly, completely bypassing
+    the reasoning-approval workflow. These confirm that path is now closed."""
+
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        oms.DATABASE = self.db_path
+        oms.app.config.update(TESTING=True, SECRET_KEY="test-secret")
+        os.environ.pop("GEMINI_API_KEY", None)
+        oms.init_db()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    def connect(self):
+        return oms.get_db_connection()
+
+    def login_admin(self, client):
+        with client.session_transaction() as sess:
+            sess["admin_logged_in"] = True
+
+    def create_order(self, conn):
+        now = oms.now_string()
+        cursor = conn.execute(
+            """
+            INSERT INTO orders (
+                username, menu, quantity, time, status, status_time,
+                total_price, payment_method, payment_status, payment_reference,
+                contact_number, payment_proof_path
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("alice", "Veg Meal", 1, now, "Delivered", now, 120.0, "UPI QR", "Pending", "", "5550100", ""),
+        )
+        return cursor.lastrowid
+
+    def create_case(self):
+        conn = self.connect()
+        order_id = self.create_order(conn)
+        case_id, outcome = oms.create_financial_case_for_order(conn, order_id, "admin")
+        self.assertEqual(outcome, "created")
+        conn.commit()
+        conn.close()
+        return case_id
+
+    def case_row(self, conn, case_id):
+        return conn.execute("SELECT * FROM financial_case WHERE id = ?", (case_id,)).fetchone()
+
+    def test_lifecycle_form_cannot_change_risk_fields(self):
+        case_id = self.create_case()
+        client = oms.app.test_client()
+        self.login_admin(client)
+
+        conn = self.connect()
+        before = self.case_row(conn, case_id)
+        conn.close()
+
+        response = client.post(
+            f"/admin/finance/case/{case_id}/update",
+            data={
+                "status": "Investigating",
+                "risk_tier": "Critical",
+                "risk_score": "99.9",
+                "confidence": "99.9",
+                "follow_up_due_at": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        conn = self.connect()
+        after = self.case_row(conn, case_id)
+        conn.close()
+
+        # Status is still editable via this form...
+        self.assertEqual(after["status"], "Investigating")
+        # ...but risk fields must be completely untouched, no matter what was submitted.
+        self.assertEqual(after["risk_tier"], before["risk_tier"])
+        self.assertEqual(after["risk_score"], before["risk_score"])
+        self.assertEqual(after["confidence"], before["confidence"])
+
+    def test_lifecycle_form_still_updates_follow_up_due_at(self):
+        case_id = self.create_case()
+        client = oms.app.test_client()
+        self.login_admin(client)
+
+        future = (oms.current_local_datetime() + oms.timedelta(days=3)).strftime(oms.DISPLAY_DATETIME_FORMAT)
+        client.post(
+            f"/admin/finance/case/{case_id}/update",
+            data={"status": "Open", "follow_up_due_at": future},
+        )
+
+        conn = self.connect()
+        after = self.case_row(conn, case_id)
+        conn.close()
+        self.assertEqual(after["follow_up_due_at"], future)
+
+    def test_approved_risk_values_survive_a_later_lifecycle_save(self):
+        case_id = self.create_case()
+        client = oms.app.test_client()
+        self.login_admin(client)
+
+        conn = self.connect()
+        reasoning = conn.execute(
+            "SELECT * FROM case_reasoning WHERE case_id = ? ORDER BY id DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+        conn.close()
+        client.post(f"/admin/finance/case/{case_id}/reasoning/{reasoning['id']}/approve")
+
+        conn = self.connect()
+        approved = self.case_row(conn, case_id)
+        conn.close()
+
+        # Someone now saves the Lifecycle form with unrelated garbage risk values in the request
+        # (e.g. a stale browser tab, or a scripted/replayed form post) — must not matter.
+        client.post(
+            f"/admin/finance/case/{case_id}/update",
+            data={
+                "status": approved["status"],
+                "risk_tier": "Low",
+                "risk_score": "0",
+                "confidence": "0",
+                "follow_up_due_at": "",
+            },
+        )
+
+        conn = self.connect()
+        after = self.case_row(conn, case_id)
+        conn.close()
+        self.assertEqual(after["risk_tier"], approved["risk_tier"])
+        self.assertEqual(after["risk_score"], approved["risk_score"])
+        self.assertEqual(after["confidence"], approved["confidence"])
+
+
 if __name__ == "__main__":
     unittest.main()
