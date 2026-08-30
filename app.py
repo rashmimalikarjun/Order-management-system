@@ -2637,6 +2637,9 @@ def admin_finance():
         LIMIT 12
         """
     ).fetchall()
+    pending_action_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM case_action WHERE status = 'pending'"
+    ).fetchone()["c"]
     conn.close()
 
     now_dt = current_local_datetime()
@@ -2653,6 +2656,7 @@ def admin_finance():
         "resolved": sum(1 for case in all_cases if case["status"] in FINANCIAL_CASE_CLOSED_STATUSES),
         "due_followups": len(due_followups),
         "candidates": candidate_count,
+        "pending_actions": pending_action_count,
     }
 
     cases = [
@@ -2813,13 +2817,10 @@ def admin_update_financial_case(case_id):
         return redirect(url_for("admin_finance") + "?error=case_not_found")
 
     status = normalize_financial_choice(request.form.get("status"), FINANCIAL_CASE_STATUSES, case["status"])
-    risk_tier = normalize_financial_choice(
-        request.form.get("risk_tier"),
-        FINANCIAL_RISK_TIERS,
-        case["risk_tier"],
-    )
-    risk_score = parse_percentage(request.form.get("risk_score"), float(case["risk_score"] or 0))
-    confidence = parse_percentage(request.form.get("confidence"), float(case["confidence"] or 0))
+    # risk_tier/risk_score/confidence are intentionally NOT accepted here. They may only
+    # change via an approved case_reasoning entry (see review_financial_case_reasoning),
+    # so every risk-field change stays gated behind that audited approval workflow instead
+    # of being freely overwritable from this general lifecycle form.
     follow_up_due_at = normalize_follow_up_datetime(request.form.get("follow_up_due_at"))
     updated_at = now_string()
     resolved_at = case["resolved_at"]
@@ -2833,9 +2834,6 @@ def admin_update_financial_case(case_id):
         """
         UPDATE financial_case
         SET status = ?,
-            risk_tier = ?,
-            risk_score = ?,
-            confidence = ?,
             updated_at = ?,
             resolved_at = ?,
             follow_up_due_at = ?
@@ -2843,9 +2841,6 @@ def admin_update_financial_case(case_id):
         """,
         (
             status,
-            risk_tier,
-            risk_score,
-            confidence,
             updated_at,
             resolved_at,
             follow_up_due_at,
@@ -2861,7 +2856,7 @@ def admin_update_financial_case(case_id):
             case_id,
             "case_updated",
             ADMIN_USERNAME,
-            f"status={status}, risk_tier={risk_tier}, risk_score={risk_score:.1f}, confidence={confidence:.1f}",
+            f"status={status}, follow_up_due_at={follow_up_due_at or '-'}",
             updated_at,
         ),
     )
