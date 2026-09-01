@@ -196,6 +196,10 @@
         <div class="value">{{ finance_stats.candidates }}</div>
       </div>
       <div class="stat">
+        <div class="label">Pending Actions</div>
+        <div class="value">{{ finance_stats.pending_actions }}</div>
+      </div>
+      <div class="stat">
         <div class="label">Total Cases</div>
         <div class="value">{{ finance_stats.total }}</div>
       </div>
@@ -342,6 +346,7 @@
               <th>Order</th>
               <th>Initiated By</th>
               <th>Outcome</th>
+              <th>Status</th>
               <th>Time</th>
             </tr>
             {% for action in recent_actions %}
@@ -351,6 +356,15 @@
                 <td>#{{ action.order_id }}<br><span class="meta">{{ action.username }}</span></td>
                 <td>{{ action.initiated_by }}</td>
                 <td>{{ action.outcome }}</td>
+                <td>
+                  {% if action.status == 'pending' %}
+                    <span class="pill status-investigating">Pending</span>
+                  {% elif action.status == 'overridden' %}
+                    <span class="pill status-escalated">Overridden</span>
+                  {% else %}
+                    <span class="pill status-resolved">Completed</span>
+                  {% endif %}
+                </td>
                 <td>{{ action.created_at }}</td>
               </tr>
             {% endfor %}
