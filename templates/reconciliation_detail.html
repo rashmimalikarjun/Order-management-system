@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reconciliation Batch #{{ batch.id }} - Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    h3 { margin: 0 0 10px; }
+    .meta { color: #475569; margin: 4px 0 0; font-size: 14px; }
+    .btn {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.ghost { background: #334155; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+    .stat .label { font-size: 12px; color: #64748b; font-weight: 700; }
+    .stat .value { font-size: 24px; font-weight: 800; color: #0f172a; }
+    .stat.highlight { background: #ecfdf5; border-color: #a7f3d0; }
+    .stat.highlight .value { color: #0f766e; }
+    .table-wrap { overflow-x: auto; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 10px 8px;
+      font-size: 14px;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .pill {
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      display: inline-block;
+      white-space: nowrap;
+      text-transform: capitalize;
+    }
+    .pill.matched { background: #dcfce7; color: #166534; }
+    .pill.amount_mismatch { background: #fef3c7; color: #92400e; }
+    .pill.duplicate_settlement { background: #fee2e2; color: #991b1b; }
+    .pill.no_matching_order { background: #e2e8f0; color: #334155; }
+    .pill.already_reconciled { background: #dbeafe; color: #1e3a8a; }
+    .empty {
+      padding: 20px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Reconciliation Batch #{{ batch.id }}</h2>
+        <p class="meta">Run at {{ batch.created_at }} by {{ batch.triggered_by }}.</p>
+      </div>
+      <div>
+        <a href="{{ url_for('reconciliation_dashboard') }}" class="btn ghost">Back to Reconciliation</a>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat highlight">
+        <div class="label">Match Rate</div>
+        <div class="value">{{ '%.2f'|format(batch.match_rate) }}%</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Records</div>
+        <div class="value">{{ batch.record_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Matched</div>
+        <div class="value">{{ batch.matched_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Amount Mismatch</div>
+        <div class="value">{{ batch.amount_mismatch_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Duplicate Settlement</div>
+        <div class="value">{{ batch.duplicate_settlement_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">No Matching Order</div>
+        <div class="value">{{ batch.no_matching_order_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Already Reconciled</div>
+        <div class="value">{{ batch.already_reconciled_count }}</div>
+      </div>
+    </div>
+
+    <h3>Exception List ({{ exceptions|length }})</h3>
+    {% if exceptions %}
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th>Ref</th>
+            <th>Amount</th>
+            <th>Settled At</th>
+            <th>Source</th>
+            <th>Order</th>
+            <th>Classification</th>
+            <th>Reason</th>
+          </tr>
+          {% for s in exceptions %}
+            <tr>
+              <td>{{ s.external_ref or '(blank)' }}</td>
+              <td>INR {{ '%.2f'|format(s.amount) }}</td>
+              <td>{{ s.settled_at }}</td>
+              <td>{{ s.source }}</td>
+              <td>{% if s.order_id %}#{{ s.order_id }}{% else %}-{% endif %}</td>
+              <td><span class="pill {{ s.classification }}">{{ s.classification.replace('_', ' ') }}</span></td>
+              <td>{{ s.reason }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">No exceptions in this batch.</div>
+    {% endif %}
+
+    <h3>Full Settlement List ({{ settlements|length }})</h3>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Ref</th>
+          <th>Amount</th>
+          <th>Settled At</th>
+          <th>Source</th>
+          <th>Order</th>
+          <th>Classification</th>
+          <th>Reason</th>
+        </tr>
+        {% for s in settlements %}
+          <tr>
+            <td>{{ s.external_ref or '(blank)' }}</td>
+            <td>INR {{ '%.2f'|format(s.amount) }}</td>
+            <td>{{ s.settled_at }}</td>
+            <td>{{ s.source }}</td>
+            <td>{% if s.order_id %}#{{ s.order_id }}{% else %}-{% endif %}</td>
+            <td><span class="pill {{ s.classification }}">{{ s.classification.replace('_', ' ') }}</span></td>
+            <td>{{ s.reason }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</body>
+</html>
