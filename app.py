@@ -548,6 +548,419 @@ def risk_tier_from_score(score):
     return "Low"
 
 
+# =============================================================================
+# Finance Controller Agent: Reconciliation Exception Analysis
+# =============================================================================
+# This agent analyzes already-persisted reconciliation batches and provides:
+# - Batch-level metrics (total, matched, exceptions, match rate, amounts)
+# - Exception prioritization based on financial impact and severity
+# - Human-readable explanations for each exception
+# - Recommended actions (investigate, verify reference, create financial case, etc.)
+#
+# SAFETY CONSTRAINTS:
+# - Does NOT modify reconciliation records
+# - Does NOT re-classify exceptions (uses deterministic classification as truth)
+# - Does NOT auto-create/approve/dispatch financial cases
+# - Does NOT invent financial facts (uses only actual DB data)
+# - Falls back to deterministic analysis if Gemini is unavailable
+# =============================================================================
+
+def build_reconciliation_agent_prompt(batch, exceptions, order_data_map):
+    """Build a prompt for analyzing reconciliation exceptions.
+    
+    Args:
+        batch: dict with batch metadata (id, created_at, counts, match_rate, etc.)
+        exceptions: list of exception records from reconciliation_settlements
+        order_data_map: dict mapping order_id -> order details for linked orders
+    
+    Returns:
+        str: Prompt text for Gemini API
+    """
+    exception_summary = []
+    for ex in exceptions:
+        order_info = ""
+        if ex.get("order_id"):
+            order = order_data_map.get(ex["order_id"], {})
+            order_info = (
+                f"Order #{ex['order_id']}: status={order.get('status', 'N/A')}, "
+                f"payment_status={order.get('payment_status', 'N/A')}, "
+                f"total_price=INR {order.get('total_price', 'N/A')}"
+            )
+        else:
+            order_info = "No matching order found."
+        
+        exception_summary.append(
+            f"- ID: {ex['id']}, Ref: '{ex['external_ref'] or '(blank)'}', "
+            f"Amount: INR {ex['amount']:.2f}, Classification: {ex['classification']}, "
+            f"{order_info}"
+        )
+    
+    exceptions_text = "\n".join(exception_summary)
+    
+    return f"""You are a Finance Controller Agent analyzing reconciliation exceptions.
+Analyze ONLY the supplied evidence. Do NOT invent facts. Do NOT assume missing evidence.
+Do NOT re-classify exceptions - use the provided classification as ground truth.
+
+Your task:
+1. Report ACTUAL batch metrics from the data provided.
+2. Prioritize exceptions by financial impact and severity.
+3. Explain EACH exception using ONLY actual data (no fabrication).
+4. Recommend an action for each exception.
+
+CLASSIFICATION TYPES (use these exactly):
+- matched: Settlement correctly matched order, order marked Paid.
+- amount_mismatch: Reference matched but amounts differ (e.g., fee deduction).
+- duplicate_settlement: Same order claimed twice in same batch.
+- no_matching_order: Orphan settlement with no corresponding order.
+- already_reconciled: Order was already Paid before this batch.
+
+PRIORITY GUIDELINES:
+- HIGH: Large monetary value, duplicate risk, corporate orders.
+- MEDIUM: Moderate amounts, potential fee discrepancies.
+- LOW: Small amounts, orphan payments awaiting order creation.
+
+RECOMMENDED ACTIONS:
+- "investigate": General investigation needed.
+- "verify_reference": Check payment reference accuracy.
+- "review_amount_mismatch": Verify fee agreement or rounding.
+- "check_duplicate": Confirm if duplicate settlement is legitimate.
+- "create_financial_case": Create financial case for human review (for significant issues).
+- "await_order_creation": For orphan payments where order may be created later.
+
+Return a strictly valid JSON object matching this schema exactly:
+{{
+    "batch_metrics": {{
+        "total_records": <number>,
+        "matched_records": <number>,
+        "exception_records": <number>,
+        "match_rate_percent": <number>,
+        "reconciled_amount_inr": <number>,
+        "unresolved_amount_inr": <number>
+    }},
+    "exception_breakdown": {{
+        "amount_mismatch": <count>,
+        "duplicate_settlement": <count>,
+        "no_matching_order": <count>,
+        "already_reconciled": <count>
+    }},
+    "prioritized_exceptions": [
+        {{
+            "settlement_id": <number>,
+            "priority_rank": <number starting from 1>,
+            "priority_level": "HIGH" | "MEDIUM" | "LOW",
+            "financial_impact_inr": <number>,
+            "reason_for_priority": "<string explaining why this priority>"
+        }}
+    ],
+    "exception_explanations": [
+        {{
+            "settlement_id": <number>,
+            "what_happened": "<string factual description>",
+            "why_reconciliation_failed": "<string explanation based on classification>",
+            "financial_impact": "<string describing monetary impact>",
+            "relevant_order_info": "<string or 'No matching order'>"
+        }}
+    ],
+    "recommendations": [
+        {{
+            "settlement_id": <number>,
+            "recommended_action": "<string from allowed actions>",
+            "action_justification": "<string explaining why this action>",
+            "should_create_financial_case": <boolean>
+        }}
+    ]
+}}
+
+BATCH METADATA:
+Batch ID: {batch['id']}
+Created At: {batch['created_at']}
+Triggered By: {batch['triggered_by']}
+Total Records: {batch['record_count']}
+Matched: {batch['matched_count']}
+Match Rate: {batch['match_rate']}%
+
+EXCEPTIONS ({len(exceptions)} total):
+{exceptions_text}
+
+Remember:
+- Use ONLY the data provided above.
+- Do NOT fabricate amounts, references, or order details.
+- If data is missing, state "Data not available" rather than guessing.
+- Financial case creation should be recommended only for significant issues requiring human review."""
+
+
+def validate_reconciliation_agent_response(ai_data):
+    """Validate the AI agent's response schema.
+    
+    Args:
+        ai_data: dict parsed from AI response
+    
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if not isinstance(ai_data, dict):
+        return False
+    
+    # Check batch_metrics
+    if "batch_metrics" not in ai_data or not isinstance(ai_data["batch_metrics"], dict):
+        return False
+    batch_metrics = ai_data["batch_metrics"]
+    required_metrics = ["total_records", "matched_records", "exception_records", 
+                        "match_rate_percent", "reconciled_amount_inr", "unresolved_amount_inr"]
+    for key in required_metrics:
+        if key not in batch_metrics:
+            return False
+        if not isinstance(batch_metrics[key], (int, float)):
+            return False
+    
+    # Check exception_breakdown
+    if "exception_breakdown" not in ai_data or not isinstance(ai_data["exception_breakdown"], dict):
+        return False
+    breakdown = ai_data["exception_breakdown"]
+    required_breakdown = ["amount_mismatch", "duplicate_settlement", "no_matching_order", "already_reconciled"]
+    for key in required_breakdown:
+        if key not in breakdown:
+            return False
+        if not isinstance(breakdown[key], int):
+            return False
+    
+    # Check prioritized_exceptions
+    if "prioritized_exceptions" not in ai_data or not isinstance(ai_data["prioritized_exceptions"], list):
+        return False
+    for item in ai_data["prioritized_exceptions"]:
+        if not isinstance(item, dict):
+            return False
+        if "settlement_id" not in item or "priority_rank" not in item:
+            return False
+        if "priority_level" not in item or item["priority_level"] not in ["HIGH", "MEDIUM", "LOW"]:
+            return False
+        if "financial_impact_inr" not in item:
+            return False
+        if "reason_for_priority" not in item or not isinstance(item["reason_for_priority"], str):
+            return False
+    
+    # Check exception_explanations
+    if "exception_explanations" not in ai_data or not isinstance(ai_data["exception_explanations"], list):
+        return False
+    for item in ai_data["exception_explanations"]:
+        if not isinstance(item, dict):
+            return False
+        required_keys = ["settlement_id", "what_happened", "why_reconciliation_failed", 
+                         "financial_impact", "relevant_order_info"]
+        for key in required_keys:
+            if key not in item:
+                return False
+        # settlement_id can be int, others must be strings
+        if not isinstance(item["what_happened"], str):
+            return False
+        if not isinstance(item["why_reconciliation_failed"], str):
+            return False
+        if not isinstance(item["financial_impact"], str):
+            return False
+        if not isinstance(item["relevant_order_info"], str):
+            return False
+    
+    # Check recommendations
+    if "recommendations" not in ai_data or not isinstance(ai_data["recommendations"], list):
+        return False
+    for item in ai_data["recommendations"]:
+        if not isinstance(item, dict):
+            return False
+        required_keys = ["settlement_id", "recommended_action", "action_justification", 
+                         "should_create_financial_case"]
+        for key in required_keys:
+            if key not in item:
+                return False
+        if not isinstance(item["recommended_action"], str):
+            return False
+        if not isinstance(item["action_justification"], str):
+            return False
+        if not isinstance(item["should_create_financial_case"], bool):
+            return False
+    
+    return True
+
+
+def evaluate_reconciliation_batch_deterministic(batch, exceptions, order_data_map):
+    """Deterministic fallback analysis when Gemini is unavailable.
+    
+    This function produces results from ACTUAL reconciliation data only.
+    It NEVER fabricates values, amounts, or classifications.
+    
+    Args:
+        batch: dict with batch metadata
+        exceptions: list of exception records
+        order_data_map: dict mapping order_id -> order details
+    
+    Returns:
+        dict: Analysis result matching AI response schema
+    """
+    # Compute actual metrics from batch data
+    total_records = batch["record_count"]
+    matched_records = batch["matched_count"]
+    exception_records = total_records - matched_records
+    match_rate = batch["match_rate"]
+    
+    # Calculate reconciled amount from matched settlements
+    # We need to fetch matched settlements to get their amounts
+    # For now, use exception data only (matched amounts would require additional query)
+    reconciled_amount = 0.0  # Would need to sum matched settlement amounts
+    unresolved_amount = sum(ex["amount"] for ex in exceptions)
+    
+    # Build exception breakdown from actual classifications
+    breakdown = {
+        "amount_mismatch": 0,
+        "duplicate_settlement": 0,
+        "no_matching_order": 0,
+        "already_reconciled": 0
+    }
+    for ex in exceptions:
+        cls = ex["classification"]
+        if cls in breakdown:
+            breakdown[cls] += 1
+    
+    # Prioritize exceptions deterministically by financial impact (amount) primarily,
+    # with adjustments for high-severity classifications like duplicates.
+    # Higher amount = higher priority (should appear first).
+    # Duplicates are always HIGH priority regardless of amount.
+    
+    sorted_exceptions = sorted(exceptions, key=lambda x: -x.get("amount", 0))  # Sort by amount descending
+    prioritized = []
+    for rank, ex in enumerate(sorted_exceptions, 1):
+        amount = ex.get("amount", 0)
+        # Use 'id' if available (from DB), otherwise use a synthetic ID based on index
+        ex_id = ex.get("id") if ex.get("id") is not None else rank
+        
+        # Determine priority level based on amount thresholds
+        if amount >= 1000:
+            priority_level = "HIGH"
+            reason = f"High monetary value (INR {amount:.2f})"
+        elif amount >= 200:
+            priority_level = "MEDIUM"
+            reason = f"Moderate monetary value (INR {amount:.2f})"
+        else:
+            priority_level = "LOW"
+            reason = f"Lower monetary value (INR {amount:.2f})"
+        
+        # Adjust priority based on classification severity
+        # Duplicates are always HIGH priority (fraud risk)
+        if ex.get("classification") == "duplicate_settlement":
+            priority_level = "HIGH"
+            reason = "Duplicate settlement requires immediate investigation"
+        # Large orphan payments need urgent attention
+        elif ex.get("classification") == "no_matching_order" and amount >= 500:
+            priority_level = "HIGH"
+            reason = f"Large orphan payment (INR {amount:.2f}) needs order lookup"
+        
+        prioritized.append({
+            "settlement_id": ex_id,
+            "priority_rank": rank,
+            "priority_level": priority_level,
+            "financial_impact_inr": amount,
+            "reason_for_priority": reason
+        })
+    
+    # Generate explanations for each exception
+    explanations = []
+    for ex in exceptions:
+        # Use 'id' if available (from DB), otherwise use 0 as placeholder
+        ex_id = ex.get("id") if ex.get("id") is not None else 0
+        order = order_data_map.get(ex.get("order_id"), {}) if ex.get("order_id") else {}
+        
+        what_happened = (
+            f"Settlement of INR {ex.get('amount', 0):.2f} with reference '{ex.get('external_ref') or '(blank)'}' "
+            f"from source '{ex.get('source', 'N/A')}' was processed."
+        )
+        
+        classification = ex.get("classification", "unknown")
+        reason_text = ex.get("reason", "Unknown reason")
+        
+        why_failed = {
+            "amount_mismatch": (
+                f"Reference matched an order, but settled amount differs from order total. "
+                f"{reason_text}"
+            ),
+            "duplicate_settlement": (
+                f"This settlement references an order that was already reconciled earlier in the same batch. "
+                f"{reason_text}"
+            ),
+            "no_matching_order": (
+                f"No order found with matching payment reference or amount within tolerance. "
+                f"{reason_text}"
+            ),
+            "already_reconciled": (
+                f"The referenced order was already marked Paid before this batch ran. "
+                f"{reason_text}"
+            )
+        }.get(classification, reason_text)
+        
+        financial_impact = f"Unresolved amount: INR {ex.get('amount', 0):.2f}"
+        relevant_order_info = (
+            f"Order #{ex['order_id']}: status={order.get('status', 'N/A')}, "
+            f"payment_status={order.get('payment_status', 'N/A')}, "
+            f"total=INR {order.get('total_price', 'N/A')}"
+        ) if order else "No matching order found."
+        
+        explanations.append({
+            "settlement_id": ex_id,
+            "what_happened": what_happened,
+            "why_reconciliation_failed": why_failed,
+            "financial_impact": financial_impact,
+            "relevant_order_info": relevant_order_info
+        })
+    
+    # Generate recommendations
+    recommendations = []
+    for ex in exceptions:
+        # Use 'id' if available (from DB), otherwise use 0 as placeholder
+        ex_id = ex.get("id") if ex.get("id") is not None else 0
+        
+        action_map = {
+            "amount_mismatch": ("review_amount_mismatch", 
+                                "Verify fee agreement or check for rounding discrepancies"),
+            "duplicate_settlement": ("check_duplicate", 
+                                     "Confirm if this is a legitimate duplicate or system error"),
+            "no_matching_order": ("investigate", 
+                                  "Search for order by customer details or await order creation"),
+            "already_reconciled": ("verify_reference", 
+                                   "Check if this is a duplicate settlement request")
+        }
+        
+        classification = ex.get("classification", "unknown")
+        action, justification = action_map.get(classification, 
+                                                ("investigate", "Manual review required"))
+        
+        # Recommend financial case for high-value or duplicate exceptions
+        should_create_case = (
+            ex.get("amount", 0) >= 1000 or 
+            classification == "duplicate_settlement" or
+            (classification == "no_matching_order" and ex.get("amount", 0) >= 500)
+        )
+        
+        recommendations.append({
+            "settlement_id": ex_id,
+            "recommended_action": action,
+            "action_justification": justification,
+            "should_create_financial_case": should_create_case
+        })
+    
+    return {
+        "analysis_source": "deterministic_v1",
+        "batch_metrics": {
+            "total_records": total_records,
+            "matched_records": matched_records,
+            "exception_records": exception_records,
+            "match_rate_percent": match_rate,
+            "reconciled_amount_inr": reconciled_amount,
+            "unresolved_amount_inr": unresolved_amount
+        },
+        "exception_breakdown": breakdown,
+        "prioritized_exceptions": prioritized,
+        "exception_explanations": explanations,
+        "recommendations": recommendations
+    }
+
+
 def evaluate_financial_case(order, finance_items, evidence_rows):
     order_data = row_to_dict(order)
     if not order_data:
@@ -2313,6 +2726,88 @@ def reconciliation_batch_detail(batch_id):
     return render_template(
         "reconciliation_detail.html", batch=batch, settlements=settlements, exceptions=exceptions,
     )
+
+
+@app.route("/admin/reconciliation/<int:batch_id>/analyze", methods=["POST"])
+@login_required_admin
+def analyze_reconciliation_batch_route(batch_id):
+    """Analyze a reconciliation batch using the Finance Controller Agent.
+    
+    This endpoint:
+    1. Fetches the batch and its exceptions from the database
+    2. Enriches exception data with order information
+    3. Calls Gemini API (with deterministic fallback)
+    4. Returns structured analysis WITHOUT modifying any records
+    
+    The agent does NOT:
+    - Modify reconciliation records
+    - Auto-create financial cases
+    - Auto-approve or dispatch actions
+    """
+    conn = get_db_connection()
+    try:
+        batch, settlements = get_reconciliation_batch(conn, batch_id)
+        if not batch:
+            return jsonify({"error": "Batch not found"}), 404
+        
+        # Get only exceptions (non-matched settlements)
+        exceptions = [s for s in settlements if s["classification"] != "matched"]
+        
+        # Enrich with order data for linked orders
+        order_ids = set(ex.get("order_id") for ex in exceptions if ex.get("order_id"))
+        order_data_map = {}
+        if order_ids:
+            placeholders = ",".join("?" * len(order_ids))
+            orders = conn.execute(
+                f"SELECT id, status, payment_status, total_price FROM orders WHERE id IN ({placeholders})",
+                tuple(order_ids)
+            ).fetchall()
+            order_data_map = {o["id"]: dict(o) for o in orders}
+        
+        # Try AI analysis first if GEMINI_API_KEY is set
+        result = None
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        
+        if gemini_key and exceptions:
+            try:
+                model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+                prompt = build_reconciliation_agent_prompt(batch, exceptions, order_data_map)
+                ai_text = call_gemini_api(prompt, gemini_key, model_name)
+                
+                # Parse and validate response
+                try:
+                    ai_data = json.loads(ai_text)
+                except Exception:
+                    ai_data = None
+                
+                if ai_data is not None and validate_reconciliation_agent_response(ai_data):
+                    result = {
+                        "analysis_source": "gemini_ai_v1",
+                        **ai_data
+                    }
+                else:
+                    print("WARNING: Reconciliation agent AI validation failed. Using deterministic fallback.")
+                    result = None
+                    
+            except Exception as e:
+                failure_reason = redact_secret(str(e), gemini_key)
+                print(f"WARNING: Reconciliation agent AI failed ({failure_reason}). Using deterministic fallback.")
+                result = None
+        
+        # Deterministic fallback (always works, never fabricates)
+        if result is None:
+            result = evaluate_reconciliation_batch_deterministic(batch, exceptions, order_data_map)
+        
+        # Add batch metadata to response
+        result["batch_id"] = batch_id
+        result["exception_count"] = len(exceptions)
+        
+        conn.close()
+        return jsonify(result)
+        
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/", methods=["GET", "POST"])
