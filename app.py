@@ -6,7 +6,7 @@ import random
 import string
 import urllib.request
 import urllib.error
-from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify, flash
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import sqlite3
@@ -1993,6 +1993,7 @@ def init_db():
             duplicate_settlement_count INTEGER NOT NULL,
             no_matching_order_count INTEGER NOT NULL,
             already_reconciled_count INTEGER NOT NULL,
+            malformed_incomplete_count INTEGER NOT NULL DEFAULT 0,
             match_rate REAL NOT NULL
         )
         """
@@ -2533,13 +2534,48 @@ def reconcile_settlement_batch(conn, settlements):
         "duplicate_settlement": 0,
         "no_matching_order": 0,
         "already_reconciled": 0,
+        "malformed_incomplete": 0,
     }
 
     for settlement in settlements:
         ext_ref = (settlement.get("external_ref") or "").strip()
-        amount = round(float(settlement.get("amount", 0) or 0), 2)
+        amount_raw = settlement.get("amount")
         settled_at = settlement.get("settled_at", "")
         source = settlement.get("source", "")
+
+        # Validate required fields - malformed/incomplete data must be caught early
+        is_malformed = False
+        malformed_reason = None
+        amount = 0.0
+
+        if not ext_ref:
+            is_malformed = True
+            malformed_reason = "Missing or blank external_ref (payment reference)."
+        elif amount_raw is None or amount_raw == "":
+            is_malformed = True
+            malformed_reason = "Missing or blank amount field."
+        else:
+            try:
+                amount = round(float(amount_raw), 2)
+            except (ValueError, TypeError):
+                is_malformed = True
+                malformed_reason = f"Invalid amount value '{amount_raw}' - cannot parse as numeric."
+                amount = 0.0
+
+        if is_malformed:
+            classification = "malformed_incomplete"
+            reason = malformed_reason
+            counts[classification] += 1
+            results.append({
+                "external_ref": ext_ref,
+                "amount": amount,
+                "settled_at": settled_at,
+                "source": source,
+                "order_id": None,
+                "classification": classification,
+                "reason": reason,
+            })
+            continue
 
         order_id = None
         match_kind = None
@@ -2635,14 +2671,16 @@ def run_new_reconciliation_batch(conn, triggered_by):
         INSERT INTO reconciliation_batches (
             created_at, triggered_by, record_count, matched_count,
             amount_mismatch_count, duplicate_settlement_count,
-            no_matching_order_count, already_reconciled_count, match_rate
+            no_matching_order_count, already_reconciled_count,
+            malformed_incomplete_count, match_rate
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             created_at, triggered_by, outcome["total"], counts["matched"],
             counts["amount_mismatch"], counts["duplicate_settlement"],
             counts["no_matching_order"], counts["already_reconciled"],
+            counts.get("malformed_incomplete", 0),
             outcome["match_rate"],
         ),
     )
@@ -2714,7 +2752,7 @@ def run_reconciliation_batch():
     return redirect(url_for("reconciliation_batch_detail", batch_id=batch_id))
 
 
-@app.route("/admin/reconciliation/<int:batch_id>")
+@app.route("/admin/reconciliation/<int:batch_id>", methods=["GET", "POST"])
 @login_required_admin
 def reconciliation_batch_detail(batch_id):
     conn = get_db_connection()
@@ -2723,8 +2761,16 @@ def reconciliation_batch_detail(batch_id):
     if not batch:
         return redirect(url_for("reconciliation_dashboard"))
     exceptions = [s for s in settlements if s["classification"] != "matched"]
+    
+    # Check if this is a POST from the analyze button
+    agent_result = None
+    if request.method == "POST":
+        # The analyze route will handle the actual analysis
+        # This branch should not normally be reached since the form posts to /analyze
+        pass
+    
     return render_template(
-        "reconciliation_detail.html", batch=batch, settlements=settlements, exceptions=exceptions,
+        "reconciliation_detail.html", batch=batch, settlements=settlements, exceptions=exceptions, agent_result=agent_result,
     )
 
 
