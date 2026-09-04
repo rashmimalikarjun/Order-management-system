@@ -486,19 +486,19 @@ class RouteTests(FinanceControllerAgentTests):
         settlements = [
             {"external_ref": "TEST-REF", "amount": 100.0, "settled_at": "now", "source": "Test"},
         ]
-        outcome = oms.reconcile_settlement_batch(conn, settlements)
-        conn.commit()
+        
+        # Use run_new_reconciliation_batch to properly persist the batch and settlements
+        batch_id = oms.run_new_reconciliation_batch(conn, "test_user")
         
         # Capture state before analysis
         batch_row_before = conn.execute(
-            "SELECT * FROM reconciliation_batches ORDER BY id DESC LIMIT 1"
+            "SELECT * FROM reconciliation_batches WHERE id = ?", (batch_id,)
         ).fetchone()
         settlement_count_before = conn.execute(
             "SELECT COUNT(*) FROM reconciliation_settlements WHERE batch_id = ?", 
-            (batch_row_before["id"],)
+            (batch_id,)
         ).fetchone()[0]
         
-        batch_id = batch_row_before["id"]
         conn.close()
 
         # Call analyze route
@@ -532,14 +532,12 @@ class RouteTests(FinanceControllerAgentTests):
         settlements = [
             {"external_ref": "TEST-REF", "amount": 950.0, "settled_at": "now", "source": "Test"},  # mismatch
         ]
-        oms.reconcile_settlement_batch(conn, settlements)
-        conn.commit()
+        
+        # Use run_new_reconciliation_batch to properly persist the batch and settlements
+        batch_id = oms.run_new_reconciliation_batch(conn, "test_user")
         
         # Count financial cases before
         cases_before = conn.execute("SELECT COUNT(*) FROM financial_case").fetchone()[0]
-        
-        batch_row = conn.execute("SELECT id FROM reconciliation_batches ORDER BY id DESC LIMIT 1").fetchone()
-        batch_id = batch_row["id"]
         conn.close()
 
         # Call analyze route
@@ -557,3 +555,345 @@ class RouteTests(FinanceControllerAgentTests):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FailureHandlingTests(FinanceControllerAgentTests):
+    """Test failure handling scenarios for the Finance Controller Agent."""
+
+    def test_duplicate_settlement_explained_not_reprocessed(self):
+        """Verify duplicate settlements are explained and not recommended for reprocessing."""
+        conn = self.connect()
+
+        # Create an order
+        order = self.create_order(conn, "test", 500.0, "Pending", "DUP-REF")
+        
+        # First settlement matches
+        settlements = [
+            {"external_ref": "DUP-REF", "amount": 500.0, "settled_at": "t1", "source": "Razorpay"},
+            {"external_ref": "DUP-REF", "amount": 500.0, "settled_at": "t2", "source": "Razorpay"},  # duplicate
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # Find the duplicate exception
+        duplicate_exc = None
+        for ex in exceptions:
+            if ex["classification"] == "duplicate_settlement":
+                duplicate_exc = ex
+                break
+        
+        self.assertIsNotNone(duplicate_exc, "Should have detected duplicate settlement")
+        
+        # Verify explanation mentions duplication
+        explanations = result["exception_explanations"]
+        dup_explanation = None
+        for exp in explanations:
+            if duplicate_exc.get("id") is None or exp["settlement_id"] == duplicate_exc.get("id", 0):
+                dup_explanation = exp
+                break
+        
+        self.assertIsNotNone(dup_explanation)
+        self.assertIn("duplicate", dup_explanation["why_reconciliation_failed"].lower())
+        
+        # Verify recommendation does NOT suggest processing again
+        recommendations = result["recommendations"]
+        dup_recommendation = None
+        for rec in recommendations:
+            if duplicate_exc.get("id") is None or rec["settlement_id"] == duplicate_exc.get("id", 0):
+                dup_recommendation = rec
+                break
+        
+        self.assertIsNotNone(dup_recommendation)
+        self.assertEqual(dup_recommendation["recommended_action"], "check_duplicate")
+        
+        conn.close()
+
+    def test_amount_mismatch_shows_actual_vs_expected(self):
+        """Verify amount mismatch shows actual settlement vs expected order amounts."""
+        conn = self.connect()
+
+        # Create an order with specific amount
+        order = self.create_order(conn, "test", 1000.0, "Pending", "MISMATCH-REF")
+        
+        # Settlement with different amount
+        settlements = [
+            {"external_ref": "MISMATCH-REF", "amount": 950.0, "settled_at": "t1", "source": "Razorpay"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        order_data_map = {order: {"status": "Delivered", "payment_status": "Pending", "total_price": 1000.0}}
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, order_data_map)
+
+        # Should have amount_mismatch classification
+        self.assertEqual(len(exceptions), 1)
+        self.assertEqual(exceptions[0]["classification"], "amount_mismatch")
+        
+        # Explanation should mention both amounts
+        explanation = result["exception_explanations"][0]
+        self.assertIn("950.00", explanation["what_happened"])  # settlement amount
+        self.assertIn("differs", explanation["why_reconciliation_failed"].lower())
+        
+        # Recommendation should be review, not automatic correction
+        recommendation = result["recommendations"][0]
+        self.assertEqual(recommendation["recommended_action"], "review_amount_mismatch")
+        
+        conn.close()
+
+    def test_no_matching_order_explains_missing_order(self):
+        """Verify no matching order explicitly states no order found, never fabricates ID."""
+        conn = self.connect()
+
+        # Orphan settlement with no matching order
+        settlements = [
+            {"external_ref": "ORPHAN-REF", "amount": 750.0, "settled_at": "t1", "source": "UPI"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # Should have no_matching_order classification
+        self.assertEqual(len(exceptions), 1)
+        self.assertEqual(exceptions[0]["classification"], "no_matching_order")
+        self.assertIsNone(exceptions[0]["order_id"])  # No order ID fabricated
+        
+        # Explanation should state no order found
+        explanation = result["exception_explanations"][0]
+        self.assertIn("No order found", explanation["why_reconciliation_failed"])
+        
+        # Recommendation should be manual investigation
+        recommendation = result["recommendations"][0]
+        self.assertEqual(recommendation["recommended_action"], "investigate")
+        
+        conn.close()
+
+    def test_already_reconciled_not_recommended_for_duplicate_processing(self):
+        """Verify already reconciled items are not recommended for duplicate reconciliation."""
+        conn = self.connect()
+
+        # Create an order that's already Paid
+        order = self.create_order(conn, "test", 500.0, "Paid", "PAID-REF")
+        
+        # Settlement for already-paid order
+        settlements = [
+            {"external_ref": "PAID-REF", "amount": 500.0, "settled_at": "t1", "source": "Razorpay"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # Should have already_reconciled classification
+        self.assertEqual(len(exceptions), 1)
+        self.assertEqual(exceptions[0]["classification"], "already_reconciled")
+        
+        # Explanation should mention already paid/reconciled
+        explanation = result["exception_explanations"][0]
+        self.assertIn("already", explanation["why_reconciliation_failed"].lower())
+        
+        # Recommendation should be verification, not re-processing
+        recommendation = result["recommendations"][0]
+        self.assertEqual(recommendation["recommended_action"], "verify_reference")
+        
+        conn.close()
+
+    def test_malformed_settlement_handled_gracefully(self):
+        """Verify malformed/incomplete settlement data is handled without crashing."""
+        conn = self.connect()
+
+        # Test with missing external_ref
+        settlements_missing_ref = [
+            {"external_ref": "", "amount": 500.0, "settled_at": "t1", "source": "Test"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements_missing_ref)
+        
+        # Should not crash
+        self.assertIsNotNone(outcome)
+        self.assertIn("results", outcome)
+        
+        conn.close()
+
+    def test_insufficient_evidence_marks_unresolved(self):
+        """Verify insufficient evidence marks case as requiring manual review."""
+        conn = self.connect()
+
+        # Orphan payment with no order and no clear reference
+        settlements = [
+            {"external_ref": "UNKNOWN", "amount": 300.0, "settled_at": "t1", "source": "Unknown"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # Should recommend investigation (manual review)
+        recommendation = result["recommendations"][0]
+        # For no_matching_order, action is investigate which requires manual review
+        self.assertIn(recommendation["recommended_action"], ["investigate", "await_order_creation"])
+        
+        conn.close()
+
+    def test_deterministic_fallback_never_invents_evidence(self):
+        """Verify deterministic fallback uses only actual data, never invents values."""
+        conn = self.connect()
+
+        settlements = [
+            {"external_ref": "TEST", "amount": 123.45, "settled_at": "2024-01-15", "source": "TestSource"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # Verify metrics use actual data
+        self.assertEqual(result["batch_metrics"]["total_records"], 1)
+        self.assertEqual(result["batch_metrics"]["exception_records"], 1)
+        
+        # Verify explanation uses actual settlement data
+        explanation = result["exception_explanations"][0]
+        self.assertIn("123.45", explanation["what_happened"])
+        self.assertIn("TEST", explanation["what_happened"])
+        self.assertIn("TestSource", explanation["what_happened"])
+        
+        conn.close()
+
+    def test_unresolved_result_requires_manual_review(self):
+        """Verify unresolved results indicate manual review is required."""
+        conn = self.connect()
+
+        # Multiple exception types that require manual review
+        settlements = [
+            {"external_ref": "ORPHAN1", "amount": 100.0, "settled_at": "t1", "source": "UPI"},
+            {"external_ref": "ORPHAN2", "amount": 200.0, "settled_at": "t2", "source": "Bank"},
+        ]
+        outcome = oms.reconcile_settlement_batch(conn, settlements)
+        conn.commit()
+
+        batch_info = {
+            "id": 1, "created_at": "now", "triggered_by": "test",
+            "record_count": outcome["total"], "matched_count": outcome["counts"]["matched"],
+            "match_rate": outcome["match_rate"],
+        }
+        exceptions = [r for r in outcome["results"] if r["classification"] != "matched"]
+
+        result = oms.evaluate_reconciliation_batch_deterministic(batch_info, exceptions, {})
+
+        # All recommendations should involve some form of manual action
+        for rec in result["recommendations"]:
+            self.assertIn(rec["recommended_action"], 
+                         ["investigate", "verify_reference", "review_amount_mismatch", 
+                          "check_duplicate", "await_order_creation"])
+        
+        conn.close()
+
+
+class InvalidAIResponseTests(FinanceControllerAgentTests):
+    """Test handling of invalid AI responses."""
+
+    def test_validate_rejects_missing_required_fields(self):
+        """Verify validation rejects responses missing required fields."""
+        # Missing batch_metrics
+        invalid1 = {
+            "exception_breakdown": {},
+            "prioritized_exceptions": [],
+            "exception_explanations": [],
+            "recommendations": []
+        }
+        self.assertFalse(oms.validate_reconciliation_agent_response(invalid1))
+
+        # Missing exception_breakdown
+        invalid2 = {
+            "batch_metrics": {"total_records": 1, "matched_records": 0, "exception_records": 1,
+                             "match_rate_percent": 0.0, "reconciled_amount_inr": 0.0, "unresolved_amount_inr": 100.0},
+            "prioritized_exceptions": [],
+            "exception_explanations": [],
+            "recommendations": []
+        }
+        self.assertFalse(oms.validate_reconciliation_agent_response(invalid2))
+
+    def test_validate_rejects_invalid_classification_in_breakdown(self):
+        """Verify validation rejects breakdown with non-integer counts."""
+        invalid = {
+            "batch_metrics": {"total_records": 1, "matched_records": 0, "exception_records": 1,
+                             "match_rate_percent": 0.0, "reconciled_amount_inr": 0.0, "unresolved_amount_inr": 100.0},
+            "exception_breakdown": {
+                "amount_mismatch": "one",  # Should be int
+                "duplicate_settlement": 0,
+                "no_matching_order": 0,
+                "already_reconciled": 0
+            },
+            "prioritized_exceptions": [],
+            "exception_explanations": [],
+            "recommendations": []
+        }
+        self.assertFalse(oms.validate_reconciliation_agent_response(invalid))
+
+    def test_validate_rejects_non_dict_response(self):
+        """Verify validation rejects non-dictionary responses."""
+        self.assertFalse(oms.validate_reconciliation_agent_response([]))
+        self.assertFalse(oms.validate_reconciliation_agent_response("not a dict"))
+        self.assertFalse(oms.validate_reconciliation_agent_response(None))
+
+    def test_validate_rejects_invalid_metric_types(self):
+        """Verify validation rejects non-numeric metric values."""
+        invalid = {
+            "batch_metrics": {
+                "total_records": "ten",  # Should be number
+                "matched_records": 0,
+                "exception_records": 1,
+                "match_rate_percent": 0.0,
+                "reconciled_amount_inr": 0.0,
+                "unresolved_amount_inr": 100.0
+            },
+            "exception_breakdown": {"amount_mismatch": 0, "duplicate_settlement": 0,
+                                    "no_matching_order": 1, "already_reconciled": 0},
+            "prioritized_exceptions": [],
+            "exception_explanations": [],
+            "recommendations": []
+        }
+        self.assertFalse(oms.validate_reconciliation_agent_response(invalid))
