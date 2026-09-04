@@ -1,10 +1,35 @@
-# Python cache
+```
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Local env files
+# Dependencies
+.venv/
+venv/
+env/
 .env
+.env.local
 .env.*
 
-# Local runtime/uploads (optional if you don't want to commit these)
-# static/uploads/qr/
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Build artifacts
+dist/
+build/
+target/
+```
