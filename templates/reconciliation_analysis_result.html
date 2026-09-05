@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance Controller Agent - Batch #{{ batch_id }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .header-section h1 {
+      margin: 0;
+      font-size: 28px;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-section .subtitle {
+      color: #64748b;
+      margin: 4px 0 0;
+      font-size: 14px;
+    }
+    .btn {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn.secondary { background: #0f766e; }
+    .btn.secondary:hover { background: #115e59; }
+    .btn.ghost { background: #334155; }
+    .btn.ghost:hover { background: #1e293b; }
+    
+    /* Summary Cards */
+    .summary-section {
+      margin-bottom: 24px;
+    }
+    .summary-section h2 {
+      font-size: 20px;
+      color: #334155;
+      margin: 0 0 12px;
+    }
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .summary-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px;
+      background: #f8fafc;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    .summary-card .label {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .summary-card .value {
+      font-size: 28px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-top: 4px;
+    }
+    .summary-card.highlight {
+      background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+      border-color: #a7f3d0;
+    }
+    .summary-card.highlight .value {
+      color: #0f766e;
+    }
+    .summary-card.warning {
+      background: linear-gradient(135deg, #fef3c7, #fffbEB);
+      border-color: #fcd34d;
+    }
+    .summary-card.warning .value {
+      color: #92400e;
+    }
+    .summary-card.danger {
+      background: linear-gradient(135deg, #fee2e2, #fef2f2);
+      border-color: #fca5a5;
+    }
+    .summary-card.danger .value {
+      color: #991b1b;
+    }
+    
+    /* Exception Breakdown */
+    .breakdown-section {
+      margin-bottom: 24px;
+    }
+    .breakdown-section h2 {
+      font-size: 20px;
+      color: #334155;
+      margin: 0 0 12px;
+    }
+    .breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .breakdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+    .breakdown-item .name {
+      font-size: 14px;
+      color: #475569;
+      font-weight: 600;
+    }
+    .breakdown-item .count {
+      font-size: 20px;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+    .breakdown-item.amount_mismatch .count {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .breakdown-item.duplicate_settlement .count {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .breakdown-item.no_matching_order .count {
+      background: #e2e8f0;
+      color: #334155;
+    }
+    .breakdown-item.already_reconciled .count {
+      background: #dbeafe;
+      color: #1e3a8a;
+    }
+    
+    /* Prioritized Exceptions */
+    .exceptions-section {
+      margin-bottom: 24px;
+    }
+    .exceptions-section h2 {
+      font-size: 20px;
+      color: #334155;
+      margin: 0 0 16px;
+    }
+    .exception-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .exception-card:hover {
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+    .exception-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #f1f5f9;
+      flex-wrap: wrap;
+    }
+    .exception-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .exception-title strong {
+      font-size: 18px;
+      color: #1e293b;
+    }
+    .priority-badge {
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .priority-HIGH {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .priority-MEDIUM {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .priority-LOW {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    .financial-impact {
+      font-size: 16px;
+      font-weight: 700;
+      color: #dc2626;
+    }
+    .exception-body {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .exception-detail {
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .exception-detail dt {
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 4px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .exception-detail dd {
+      margin: 0;
+      color: #334155;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-radius: 6px;
+    }
+    .classification-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+    .classification-amount_mismatch {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .classification-duplicate_settlement {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .classification-no_matching_order {
+      background: #e2e8f0;
+      color: #334155;
+    }
+    .classification-already_reconciled {
+      background: #dbeafe;
+      color: #1e3a8a;
+    }
+    
+    /* Manual Review Alert */
+    .manual-review-alert {
+      background: linear-gradient(135deg, #fef3c7, #fffbEB);
+      border-left: 4px solid #f59e0b;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+    .manual-review-alert strong {
+      color: #92400e;
+    }
+    .manual-review-alert p {
+      margin: 4px 0 0;
+      color: #78350f;
+      font-size: 13px;
+    }
+    
+    /* Amount Mismatch Display */
+    .amount-comparison {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .amount-box {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .amount-box.expected {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .amount-box.settled {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .amount-box.difference {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .arrow {
+      color: #64748b;
+      font-weight: 700;
+    }
+    
+    /* Duplicate Warning */
+    .duplicate-warning {
+      background: linear-gradient(135deg, #fee2e2, #fef2f2);
+      border: 1px solid #fca5a5;
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+    .duplicate-warning strong {
+      color: #991b1b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .duplicate-warning p {
+      margin: 6px 0 0;
+      color: #7f1d1d;
+      font-size: 13px;
+    }
+    
+    /* Recommendation Section */
+    .recommendation-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .recommendation-section h4 {
+      font-size: 14px;
+      color: #475569;
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .recommendation-action {
+      display: inline-block;
+      padding: 8px 14px;
+      background: #059669;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    .recommendation-action:hover {
+      background: #047857;
+    }
+    .recommendation-justification {
+      font-size: 13px;
+      color: #475569;
+      font-style: italic;
+      margin-top: 8px;
+    }
+    
+    /* Analysis Source Badge */
+    .analysis-source {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .analysis-source.ai {
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: #fff;
+    }
+    .analysis-source.deterministic {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #64748b;
+    }
+    .empty-state p {
+      font-size: 16px;
+      margin: 0;
+    }
+    
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .container {
+        padding: 16px;
+      }
+      .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .exception-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="topbar">
+      <div class="header-section">
+        <h1>
+          🤖 Finance Controller Agent
+        </h1>
+        <p class="subtitle">Batch #{{ batch_id }} • Analysis Report</p>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="{{ url_for('reconciliation_batch_detail', batch_id=batch_id) }}" class="btn secondary">← Back to Batch Details</a>
+        <a href="{{ url_for('reconciliation_dashboard') }}" class="btn ghost">Reconciliation Dashboard</a>
+      </div>
+    </div>
+    
+    {% if error %}
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+        <p style="color: #991b1b; margin: 0;"><strong>Error:</strong> {{ error }}</p>
+      </div>
+    {% else %}
+      <!-- Analysis Source -->
+      <div>
+        {% if analysis_source == "gemini_ai_v1" %}
+          <span class="analysis-source ai">✨ AI-Powered Analysis (Gemini)</span>
+        {% else %}
+          <span class="analysis-source deterministic">📊 Deterministic Analysis</span>
+        {% endif %}
+      </div>
+      
+      <!-- Summary Cards -->
+      <div class="summary-section">
+        <h2>Batch Summary</h2>
+        <div class="summary-cards">
+          <div class="summary-card highlight">
+            <div class="label">Match Rate</div>
+            <div class="value">{{ '%.2f'|format(batch_metrics.match_rate_percent) }}%</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total Records</div>
+            <div class="value">{{ batch_metrics.total_records }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Matched Records</div>
+            <div class="value">{{ batch_metrics.matched_records }}</div>
+          </div>
+          <div class="summary-card warning">
+            <div class="label">Exception Records</div>
+            <div class="value">{{ batch_metrics.exception_records }}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Reconciled Amount</div>
+            <div class="value">₹{{ '%,.2f'|format(batch_metrics.reconciled_amount_inr) }}</div>
+          </div>
+          <div class="summary-card danger">
+            <div class="label">Unresolved Amount</div>
+            <div class="value">₹{{ '%,.2f'|format(batch_metrics.unresolved_amount_inr) }}</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Exception Breakdown -->
+      <div class="breakdown-section">
+        <h2>Exception Breakdown by Classification</h2>
+        <div class="breakdown-grid">
+          <div class="breakdown-item amount_mismatch">
+            <span class="name">Amount Mismatch</span>
+            <span class="count">{{ exception_breakdown.amount_mismatch }}</span>
+          </div>
+          <div class="breakdown-item duplicate_settlement">
+            <span class="name">Duplicate Settlement</span>
+            <span class="count">{{ exception_breakdown.duplicate_settlement }}</span>
+          </div>
+          <div class="breakdown-item no_matching_order">
+            <span class="name">No Matching Order</span>
+            <span class="count">{{ exception_breakdown.no_matching_order }}</span>
+          </div>
+          <div class="breakdown-item already_reconciled">
+            <span class="name">Already Reconciled</span>
+            <span class="count">{{ exception_breakdown.already_reconciled }}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Prioritized Exceptions -->
+      <div class="exceptions-section">
+        <h2>Prioritized Exceptions</h2>
+        
+        {% if prioritized_exceptions %}
+          {% for item in prioritized_exceptions %}
+            {% set explanation = exception_explanations | selectattr('settlement_id', 'equalto', item.settlement_id) | first %}
+            {% set recommendation = recommendations | selectattr('settlement_id', 'equalto', item.settlement_id) | first %}
+            {% set settlement_data = settlements | selectattr('id', 'equalto', item.settlement_id) | first %}
+            
+            <div class="exception-card">
+              <div class="exception-header">
+                <div class="exception-title">
+                  <strong>Settlement #{{ item.settlement_id }}</strong>
+                  <span class="priority-badge priority-{{ item.priority_level }}">{{ item.priority_level }} Priority</span>
+                  {% if explanation %}
+                    <span class="classification-badge classification-{{ settlement_data.classification if settlement_data else 'unknown' }}">
+                      {{ (settlement_data.classification if settlement_data else 'unknown') | replace('_', ' ') }}
+                    </span>
+                  {% endif %}
+                </div>
+                <div class="financial-impact">
+                  Impact: ₹{{ '%,.2f'|format(item.financial_impact_inr) }}
+                </div>
+              </div>
+              
+              <div class="exception-body">
+                <dl class="exception-detail">
+                  <dt>Priority Reason</dt>
+                  <dd>{{ item.reason_for_priority }}</dd>
+                </dl>
+                
+                {% if explanation %}
+                <dl class="exception-detail">
+                  <dt>What Happened</dt>
+                  <dd>{{ explanation.what_happened }}</dd>
+                </dl>
+                
+                <dl class="exception-detail">
+                  <dt>Why Reconciliation Failed</dt>
+                  <dd>{{ explanation.why_reconciliation_failed }}</dd>
+                </dl>
+                
+                <dl class="exception-detail">
+                  <dt>Financial Impact</dt>
+                  <dd>{{ explanation.financial_impact }}</dd>
+                </dl>
+                
+                <dl class="exception-detail">
+                  <dt>Order Information</dt>
+                  <dd>{{ explanation.relevant_order_info }}</dd>
+                </dl>
+                
+                <!-- Amount Mismatch Display -->
+                {% if settlement_data and settlement_data.classification == 'amount_mismatch' %}
+                <dl class="exception-detail" style="grid-column: 1 / -1;">
+                  <dt>Amount Comparison</dt>
+                  <dd>
+                    <div class="amount-comparison">
+                      <span class="amount-box expected">Expected: ₹{{ '%.2f'|format(settlement_data.amount) }}</span>
+                      <span class="arrow">→</span>
+                      <span class="amount-box settled">Settled: ₹{{ '%.2f'|format(settlement_data.amount) }}</span>
+                      <span class="arrow">→</span>
+                      <span class="amount-box difference">Difference: Requires investigation</span>
+                    </div>
+                  </dd>
+                </dl>
+                {% endif %}
+                {% endif %}
+              </div>
+              
+              <!-- Duplicate Settlement Warning -->
+              {% if settlement_data and settlement_data.classification == 'duplicate_settlement' %}
+              <div class="duplicate-warning">
+                <strong>⚠️ Financial Risk: Duplicate Settlement Detected</strong>
+                <p>This settlement references an order that was already reconciled. Verify if this is a legitimate duplicate payment or a system error before taking action.</p>
+              </div>
+              {% endif %}
+              
+              <!-- Recommendation Section -->
+              {% if recommendation %}
+              <div class="recommendation-section">
+                <h4>Recommended Action</h4>
+                <span class="recommendation-action">{{ recommendation.recommended_action | replace('_', ' ') | title }}</span>
+                <p class="recommendation-justification">{{ recommendation.action_justification }}</p>
+                
+                <!-- Manual Review Alert -->
+                {% if recommendation.should_create_financial_case %}
+                <div class="manual-review-alert">
+                  <strong>🔍 Manual Review Required</strong>
+                  <p>This exception has been flagged for human review due to its financial impact or risk level. Do not auto-resolve.</p>
+                </div>
+                {% endif %}
+                
+                <!-- Create Financial Case Button -->
+                {% if recommendation.should_create_financial_case and settlement_data and settlement_data.order_id %}
+                <form method="post" action="{{ url_for('admin_create_financial_case') }}" style="margin-top: 12px; display: inline;">
+                  <input type="hidden" name="order_id" value="{{ settlement_data.order_id }}">
+                  <button type="submit" class="btn" style="background: #7c3aed;">Create Financial Case</button>
+                </form>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">
+            <p>No exceptions found in this batch. All records were successfully reconciled.</p>
+          </div>
+        {% endif %}
+      </div>
+      
+      <!-- Footer Note -->
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+        <p style="margin: 0;">
+          <strong>Note:</strong> This analysis is advisory. All financial actions require human approval before execution.
+          {% if analysis_source != "gemini_ai_v1" %}
+            This report was generated using deterministic rules (AI analysis unavailable).
+          {% endif %}
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>
