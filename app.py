@@ -2771,7 +2771,7 @@ def reconciliation_batch_detail(batch_id):
     )
 
 
-@app.route("/admin/reconciliation/<int:batch_id>/analyze", methods=["POST"])
+@app.route("/admin/reconciliation/<int:batch_id>/analyze", methods=["GET", "POST"])
 @login_required_admin
 def analyze_reconciliation_batch_route(batch_id):
     """Analyze a reconciliation batch using the Finance Controller Agent.
@@ -2782,6 +2782,9 @@ def analyze_reconciliation_batch_route(batch_id):
     3. Calls Gemini API (with deterministic fallback)
     4. Returns structured analysis WITHOUT modifying any records
     
+    GET: Renders the Finance Controller Agent analysis dashboard HTML
+    POST: Returns JSON analysis result (for programmatic access)
+    
     The agent does NOT:
     - Modify reconciliation records
     - Auto-create financial cases
@@ -2791,7 +2794,9 @@ def analyze_reconciliation_batch_route(batch_id):
     try:
         batch, settlements = get_reconciliation_batch(conn, batch_id)
         if not batch:
-            return jsonify({"error": "Batch not found"}), 404
+            if request.method == "POST":
+                return jsonify({"error": "Batch not found"}), 404
+            return redirect(url_for("reconciliation_dashboard"))
         
         # Get only exceptions (non-matched settlements)
         exceptions = [s for s in settlements if s["classification"] != "matched"]
@@ -2846,10 +2851,33 @@ def analyze_reconciliation_batch_route(batch_id):
         result["exception_count"] = len(exceptions)
         
         conn.close()
+        
+        # For GET requests, render the HTML dashboard
+        if request.method == "GET":
+            return render_template(
+                "reconciliation_analysis_result.html",
+                batch_id=batch_id,
+                analysis_source=result.get("analysis_source", "deterministic_v1"),
+                batch_metrics=result.get("batch_metrics", {}),
+                exception_breakdown=result.get("exception_breakdown", {}),
+                prioritized_exceptions=result.get("prioritized_exceptions", []),
+                exception_explanations=result.get("exception_explanations", []),
+                recommendations=result.get("recommendations", []),
+                settlements=settlements,
+                error=None
+            )
+        
+        # For POST requests, return JSON (existing behavior)
         return jsonify(result)
         
     except Exception as e:
         conn.close()
+        if request.method == "GET":
+            return render_template(
+                "reconciliation_analysis_result.html",
+                batch_id=batch_id,
+                error=str(e)
+            )
         return jsonify({"error": str(e)}), 500
 
 

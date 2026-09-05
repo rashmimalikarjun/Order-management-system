@@ -218,11 +218,9 @@
         <p class="meta">Run at {{ batch.created_at }} by {{ batch.triggered_by }}.</p>
       </div>
       <div>
-        <form method="post" action="{{ url_for('analyze_reconciliation_batch_route', batch_id=batch.id) }}" style="display: inline;">
-          <button type="submit" class="btn agent-btn" id="analyzeBtn">
-            🤖 Analyze with Finance Controller Agent
-          </button>
-        </form>
+        <a href="{{ url_for('analyze_reconciliation_batch_route', batch_id=batch.id) }}" class="btn agent-btn">
+          🤖 Analyze with Finance Controller Agent
+        </a>
         <a href="{{ url_for('reconciliation_dashboard') }}" class="btn ghost">Back to Reconciliation</a>
       </div>
     </div>
