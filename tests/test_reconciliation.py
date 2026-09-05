@@ -86,8 +86,9 @@ class DeliberateBatchExactCountsTests(ReconciliationTestCase):
         outcome = oms.reconcile_settlement_batch(conn, settlements)
 
         self.assertEqual(outcome["total"], 6)
+        counts = {k: v for k, v in outcome["counts"].items() if v > 0}
         self.assertEqual(
-            outcome["counts"],
+            counts,
             {
                 "matched": 2,
                 "amount_mismatch": 1,

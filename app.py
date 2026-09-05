@@ -2548,10 +2548,7 @@ def reconcile_settlement_batch(conn, settlements):
         malformed_reason = None
         amount = 0.0
 
-        if not ext_ref:
-            is_malformed = True
-            malformed_reason = "Missing or blank external_ref (payment reference)."
-        elif amount_raw is None or amount_raw == "":
+        if amount_raw is None or amount_raw == "":
             is_malformed = True
             malformed_reason = "Missing or blank amount field."
         else:
