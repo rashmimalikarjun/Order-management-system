@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance Controller - Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar, .filter-grid, .form-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    h3 { margin: 0 0 10px; }
+    .meta { color: #475569; margin: 4px 0 0; font-size: 14px; }
+    .btn, button {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #0f766e; }
+    .btn.ghost { background: #334155; }
+    .btn.warn, button.warn { background: #b45309; }
+    .section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-top: 16px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .stat {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+    .stat .label { font-size: 12px; color: #64748b; font-weight: 700; }
+    .stat .value { font-size: 24px; font-weight: 800; color: #0f172a; }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    input, select, textarea {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 9px 10px;
+      font-size: 14px;
+      background: #fff;
+      min-width: 160px;
+    }
+    .msg {
+      margin: 12px 0 0;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 11px 9px;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      display: inline-block;
+      white-space: nowrap;
+    }
+    .status-open { background: #dbeafe; color: #1e3a8a; }
+    .status-investigating { background: #fef3c7; color: #92400e; }
+    .status-escalated { background: #fee2e2; color: #991b1b; }
+    .status-resolved { background: #dcfce7; color: #166534; }
+    .status-closed { background: #e2e8f0; color: #334155; }
+    .risk-unscored { background: #e2e8f0; color: #334155; }
+    .risk-low { background: #dcfce7; color: #166534; }
+    .risk-medium { background: #fef3c7; color: #92400e; }
+    .risk-high { background: #ffedd5; color: #9a3412; }
+    .risk-critical { background: #fee2e2; color: #991b1b; }
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .actions form { margin: 0; }
+    .actions a, .actions button {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+    .empty {
+      padding: 16px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+      background: #fff;
+    }
+    @media (max-width: 720px) {
+      body { padding: 12px; }
+      .container { padding: 16px; }
+      input, select, textarea { width: 100%; }
+      .form-row { align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Finance Controller</h2>
+        <p class="meta">Financial cases connected to existing OMS orders and payment records.</p>
+      </div>
+      <div class="actions">
+        <a href="{{ url_for('admin') }}" class="btn secondary">Orders</a>
+        <a href="{{ url_for('reconciliation_dashboard') }}" class="btn secondary">Reconciliation</a>
+        <a href="{{ url_for('admin_audit_logs') }}" class="btn secondary">Audit Logs</a>
+        <a href="{{ url_for('logout') }}" class="btn ghost">Logout</a>
+      </div>
+    </div>
+
+    {% if request.args.get('error') == 'invalid_order' %}
+      <div class="msg err">Enter a valid order ID.</div>
+    {% elif request.args.get('error') == 'order_not_found' %}
+      <div class="msg err">No order was found for that ID.</div>
+    {% elif request.args.get('error') == 'case_not_found' %}
+      <div class="msg err">That financial case is not available.</div>
+    {% endif %}
+
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Active Cases</div>
+        <div class="value">{{ finance_stats.active }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Escalated</div>
+        <div class="value">{{ finance_stats.escalated }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Due Follow Ups</div>
+        <div class="value">{{ finance_stats.due_followups }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Delivered Unpaid</div>
+        <div class="value">{{ finance_stats.candidates }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pending Actions</div>
+        <div class="value">{{ finance_stats.pending_actions }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Cases</div>
+        <div class="value">{{ finance_stats.total }}</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Open Case</h3>
+      <form method="POST" action="{{ url_for('admin_create_financial_case') }}" class="form-row">
+        <div>
+          <label for="order_id">Order ID</label>
+          <input id="order_id" name="order_id" type="number" min="1" placeholder="Order ID" required>
+        </div>
+        <button type="submit">Create Case</button>
+      </form>
+    </div>
+
+    <form method="GET" action="{{ url_for('admin_finance') }}" class="section">
+      <h3>Filters</h3>
+      <div class="filter-grid">
+        <div>
+          <label for="status">Case Status</label>
+          <select id="status" name="status">
+            <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+            {% for status in case_statuses %}
+              <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="risk_tier">Risk Tier</label>
+          <select id="risk_tier" name="risk_tier">
+            <option value="" {% if not filters.risk_tier %}selected{% endif %}>All</option>
+            {% for tier in risk_tiers %}
+              <option value="{{ tier }}" {% if filters.risk_tier == tier %}selected{% endif %}>{{ tier }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="filter_order_id">Order ID</label>
+          <input id="filter_order_id" name="order_id" type="number" min="1" value="{{ filters.order_id }}">
+        </div>
+        <div class="actions">
+          <button type="submit">Apply</button>
+          <a href="{{ url_for('admin_finance') }}" class="btn ghost">Reset</a>
+        </div>
+      </div>
+    </form>
+
+    <div class="section">
+      <h3>Financial Cases</h3>
+      {% if cases %}
+        <div class="table-wrap">
+          <table>
+            <tr>
+              <th>Case</th>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Payment</th>
+              <th>Risk</th>
+              <th>Status</th>
+              <th>Follow Up</th>
+              <th>Updated</th>
+              <th>Actions</th>
+            </tr>
+            {% for case in cases %}
+              <tr>
+                <td>#{{ case.id }}</td>
+                <td>#{{ case.order_id }}<br><span class="meta">{{ case.order_status }}</span></td>
+                <td>{{ case.username }}<br><span class="meta">{{ case.contact_number or '-' }}</span></td>
+                <td>
+                  INR {{ '%.2f'|format(case.total_price or 0) }}<br>
+                  <span class="meta">{{ case.payment_method }} / {{ case.payment_status }}</span>
+                </td>
+                <td>
+                  <span class="pill risk-{{ case.risk_tier|lower }}">{{ case.risk_tier }}</span><br>
+                  <span class="meta">{{ '%.1f'|format(case.risk_score or 0) }} / {{ '%.1f'|format(case.confidence or 0) }}%</span>
+                </td>
+                <td><span class="pill status-{{ case.status|lower }}">{{ case.status }}</span></td>
+                <td>
+                  {{ case.follow_up_due_at or '-' }}
+                  {% if case.is_follow_up_overdue %}
+                    <br><span class="pill risk-critical">Overdue</span>
+                  {% endif %}
+                </td>
+                <td>{{ case.updated_at }}</td>
+                <td class="actions">
+                  <a href="{{ url_for('admin_financial_case_detail', case_id=case.id) }}" class="btn">View</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% else %}
+        <div class="empty">No financial cases match the selected filters.</div>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <h3>Delivered Unpaid Orders</h3>
+      {% if candidate_orders %}
+        <div class="table-wrap">
+          <table>
+            <tr>
+              <th>Order</th>
+              <th>Customer</th>
+              <th>Items</th>
+              <th>Total</th>
+              <th>Payment</th>
+              <th>Delivered</th>
+              <th>Actions</th>
+            </tr>
+            {% for order in candidate_orders %}
+              <tr>
+                <td>#{{ order.id }}</td>
+                <td>{{ order.username }}<br><span class="meta">{{ order.contact_number or '-' }}</span></td>
+                <td>{{ order.menu }}</td>
+                <td>INR {{ '%.2f'|format(order.total_price or 0) }}</td>
+                <td>{{ order.payment_method }} / {{ order.payment_status }}</td>
+                <td>{{ order.status_time }}</td>
+                <td class="actions">
+                  <a href="{{ url_for('admin_order_detail', order_id=order.id) }}" class="btn secondary">Order</a>
+                  <form method="POST" action="{{ url_for('admin_create_financial_case') }}">
+                    <input type="hidden" name="order_id" value="{{ order.id }}">
+                    <button type="submit" class="warn">Create Case</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% else %}
+        <div class="empty">No delivered unpaid orders are waiting for case creation.</div>
+      {% endif %}
+    </div>
+
+    <div class="section">
+      <h3>Recent Case Actions</h3>
+      {% if recent_actions %}
+        <div class="table-wrap">
+          <table>
+            <tr>
+              <th>Action</th>
+              <th>Case</th>
+              <th>Order</th>
+              <th>Initiated By</th>
+              <th>Outcome</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+            {% for action in recent_actions %}
+              <tr>
+                <td>{{ action.action_type }}</td>
+                <td>#{{ action.case_id }}</td>
+                <td>#{{ action.order_id }}<br><span class="meta">{{ action.username }}</span></td>
+                <td>{{ action.initiated_by }}</td>
+                <td>{{ action.outcome }}</td>
+                <td>
+                  {% if action.status == 'pending' %}
+                    <span class="pill status-investigating">Pending</span>
+                  {% elif action.status == 'overridden' %}
+                    <span class="pill status-escalated">Overridden</span>
+                  {% else %}
+                    <span class="pill status-resolved">Completed</span>
+                  {% endif %}
+                </td>
+                <td>{{ action.created_at }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% else %}
+        <div class="empty">No case actions have been recorded yet.</div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

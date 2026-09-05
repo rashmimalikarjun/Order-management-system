@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Place Order - Catering System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            padding: 24px;
+        }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        h1 { margin: 0; color: #1f2937; }
+        .cart-icon {
+            background: #111827;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .layout {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1.3fr 1fr;
+            gap: 16px;
+        }
+        .panel {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 16px;
+            background: #f9fafb;
+        }
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .item {
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            background: #fff;
+            padding: 12px;
+        }
+        .item h3 { margin: 0 0 6px; font-size: 18px; }
+        .price { color: #065f46; font-weight: 700; margin-bottom: 8px; }
+        label {
+            display: block;
+        }
+        input[type="number"], input[type="text"], input[type="tel"], select {
+            width: 100%;
+            padding: 9px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            margin-top: 6px;
+        }
+        button, .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 9px 12px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            color: #fff;
+            background: #4f46e5;
+        }
+        .btn-danger { background: #dc2626; }
+        .btn-muted { background: #475569; }
+        .cart-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .cart-table th, .cart-table td {
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            padding: 8px 6px;
+            font-size: 14px;
+            vertical-align: top;
+        }
+        .totals {
+            margin-top: 10px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .checkout {
+            margin-top: 14px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 12px;
+        }
+        .alert {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #fee2e2;
+            color: #991b1b;
+            font-weight: 600;
+        }
+        .nav {
+            margin-top: 16px;
+            text-align: center;
+        }
+        .nav a { color: #4f46e5; font-weight: 700; text-decoration: none; }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="topbar">
+            <h1>Place Your Order</h1>
+            <div class="cart-icon">Cart: {{ cart_count }} item(s)</div>
+        </div>
+
+        {% if error == 'empty_cart' %}
+            <div class="alert">Your cart is empty. Add at least one menu item.</div>
+        {% elif error == 'upi_reference_required' %}
+            <div class="alert">For UPI payment, upload payment proof. Or switch payment mode to Cash.</div>
+        {% elif error == 'stock_unavailable' %}
+            <div class="alert">Some items are out of stock or quantity is too high. Please review cart quantities.</div>
+        {% elif error == 'contact_required' %}
+            <div class="alert">Enter a valid 10-digit contact number before confirming your order.</div>
+        {% elif error == 'payment_proof_type' %}
+            <div class="alert">Invalid payment proof file. Upload PNG, JPG, JPEG, WEBP or PDF.</div>
+        {% endif %}
+
+        <div class="layout">
+            <div class="panel">
+                <h2>Menu</h2>
+                {% if menu_items %}
+                    <div class="menu-grid">
+                        {% for item in menu_items %}
+                            <div class="item">
+                                <h3>{{ item.emoji }} {{ item.name }}</h3>
+                                <div class="price">INR {{ '%.2f'|format(item.price) }}</div>
+                                <div style="font-size:12px; color:#475569; margin-bottom:8px;">Stock: {{ item.stock_qty }}</div>
+                                <form method="POST" action="{{ url_for('add_to_cart') }}">
+                                    <input type="hidden" name="item_id" value="{{ item.id }}">
+                                    <label>Quantity</label>
+                                    <input type="number" name="quantity" min="1" max="{{ item.stock_qty }}" value="1" required>
+                                    <button type="submit" style="margin-top:8px; width:100%;">Add to Cart</button>
+                                </form>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p>No menu items available right now.</p>
+                {% endif %}
+            </div>
+
+            <div class="panel">
+                <h2>Your Cart</h2>
+                {% if cart_items %}
+                    <table class="cart-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Price</th>
+                                <th>Qty</th>
+                                <th>Subtotal</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in cart_items %}
+                                <tr>
+                                    <td>{{ item.emoji }} {{ item.name }}</td>
+                                    <td>INR {{ '%.2f'|format(item.price) }}</td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('update_cart') }}">
+                                            <input type="hidden" name="item_id" value="{{ item.id }}">
+                                            <input type="number" name="quantity" min="0" max="100" value="{{ item.quantity }}" style="width:72px; margin:0;">
+                                            <button type="submit" class="btn-muted" style="margin-top:6px;">Update</button>
+                                        </form>
+                                    </td>
+                                    <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                                    <td>
+                                        <a class="btn btn-danger" href="{{ url_for('remove_from_cart', item_id=item.id) }}">Remove</a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <div class="totals">Grand Total: INR {{ '%.2f'|format(cart_total) }}</div>
+
+                    <div class="checkout">
+                        <form method="POST" action="{{ url_for('order') }}" enctype="multipart/form-data">
+                            <p style="margin:0 0 8px;"><strong>Logged in as:</strong> {{ username }}</p>
+                            <label for="contact_number" style="margin-top:10px;"><strong>Contact Number</strong></label>
+                            <input id="contact_number" name="contact_number" type="tel" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="Enter 10-digit phone number" value="{{ contact_number or '' }}" required>
+                            <label for="payment_mode" style="margin-top:10px;"><strong>Payment Method</strong></label>
+                            <select id="payment_mode" name="payment_mode">
+                                <option value="upi" {% if payment_mode != 'cash' %}selected{% endif %}>UPI (Pay now)</option>
+                                <option value="cash" {% if payment_mode == 'cash' %}selected{% endif %}>Cash (Pay at delivery/pickup)</option>
+                            </select>
+                            <div style="margin-top:12px; padding:10px; border:1px solid #cbd5e1; border-radius:8px; background:#fff;">
+                                <p style="margin:0 0 8px;"><strong>Pay via UPI QR</strong></p>
+                                <img src="{{ qr_url }}" alt="UPI QR" style="width:180px; height:180px; border:1px solid #ddd; border-radius:8px;">
+                                <p style="margin:8px 0 2px; font-size:13px;"><strong>UPI ID:</strong> {{ upi_id }}</p>
+                                <p style="margin:0 0 2px; font-size:13px;"><strong>Receiver:</strong> {{ upi_name }}</p>
+                                <p style="margin:0; font-size:13px;"><strong>Amount:</strong> INR {{ '%.2f'|format(cart_total) }}</p>
+                                <p style="margin:6px 0 0; font-size:12px;">
+                                    <a href="{{ upi_link }}">Open UPI Payment Link</a>
+                                </p>
+                            </div>
+                            <label for="payment_proof" style="margin-top:10px;"><strong>Payment Proof</strong></label>
+                            <input id="payment_proof" name="payment_proof" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" style="width:100%; padding:9px; border:1px solid #cbd5e1; border-radius:8px; margin-top:6px; background:#fff;">
+                            <button type="submit" style="margin-top:10px; width:100%;">Confirm Order</button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p>Your cart is empty.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="nav">
+            <a href="{{ url_for('index') }}">Back to Home</a> |
+            <a href="{{ url_for('my_orders') }}">My Orders</a> |
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+<script>
+    (function () {
+        var paymentMode = document.getElementById("payment_mode");
+        var paymentProof = document.getElementById("payment_proof");
+        var contactNumber = document.getElementById("contact_number");
+        if (!paymentMode || !paymentProof) return;
+
+        if (contactNumber) {
+            contactNumber.addEventListener("input", function () {
+                contactNumber.value = contactNumber.value.replace(/\D/g, "").slice(0, 10);
+            });
+            contactNumber.addEventListener("paste", function () {
+                setTimeout(function () {
+                    contactNumber.value = contactNumber.value.replace(/\D/g, "").slice(0, 10);
+                }, 0);
+            });
+        }
+
+        function syncPaymentInputs() {
+            var isUpi = paymentMode.value === "upi";
+            paymentProof.disabled = !isUpi;
+            if (!isUpi) {
+                paymentProof.value = "";
+            }
+        }
+
+        paymentMode.addEventListener("change", syncPaymentInputs);
+        syncPaymentInputs();
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Menu - Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        h1 { color: #333; margin-bottom: 30px; text-align: center; }
+        .alert-success {
+            background: #d1e7dd;
+            color: #0f5132;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #0f5132;
+        }
+        .alert-error {
+            background: #f8d7da;
+            color: #842029;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #842029;
+        }
+        .add-form {
+            background: #f8f9fa;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 24px 0;
+            border: 1px solid #dee2e6;
+        }
+        .add-form h3 { margin-bottom: 16px; color: #333; }
+        input[type="text"], input[type="number"] {
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin: 5px;
+            font-size: 16px;
+        }
+        button, .btn {
+            background: #5a67d8;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+        .btn-success { background: #0ea5e9; }
+        .btn-danger { background: #ef4444; }
+        .btn-warning { background: #f59e0b; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        th {
+            background: #5a67d8;
+            color: white;
+            padding: 14px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td { padding: 14px; border-bottom: 1px solid #f0f0f0; }
+        tr:hover { background: #f8f9fa; }
+        .status-available { color: green; font-weight: bold; }
+        .status-unavailable { color: #b91c1c; font-weight: bold; }
+        .back-link { text-align: center; margin-top: 30px; }
+        .back-link a { color: #4f46e5; text-decoration: none; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Manage Menu Items</h1>
+
+        {% if request.args.get('success') == 'added' %}
+            <div class="alert-success">Menu item added successfully.</div>
+        {% elif request.args.get('success') == 'updated' %}
+            <div class="alert-success">Menu item updated successfully.</div>
+        {% elif request.args.get('success') == 'deleted' %}
+            <div class="alert-success">Menu item deleted successfully.</div>
+        {% elif request.args.get('error') == 'duplicate' %}
+            <div class="alert-error">Duplicate item name or ID already exists.</div>
+        {% elif request.args.get('error') == 'invalid' %}
+            <div class="alert-error">Invalid input. Check ID, name, price and stock.</div>
+        {% endif %}
+
+        <div class="add-form">
+            <h3>Add New Menu Item</h3>
+            <form method="POST" action="{{ url_for('add_menu') }}">
+                <input type="number" name="menu_id" placeholder="Custom ID (Optional)" min="1" style="width: 190px;">
+                <input type="text" name="emoji" placeholder="Emoji (optional)" style="width: 130px;">
+                <input type="text" name="name" placeholder="Item Name" required style="width: 290px;">
+                <input type="number" name="price" placeholder="Price" step="0.01" min="0" required style="width: 150px;">
+                <input type="number" name="stock_qty" placeholder="Stock Qty" min="0" required style="width: 150px;">
+                <button type="submit">Add Item</button>
+            </form>
+        </div>
+
+        <h3>Current Menu Items</h3>
+
+        {% if menu_items %}
+        <table>
+            <thead>
+                <tr>
+                    <th>S.No</th>
+                    <th>ID</th>
+                    <th>Item</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in menu_items %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>#{{ item.id }}</td>
+                    <td style="font-size: 18px;">{{ item.emoji }} {{ item.name }}</td>
+                    <td style="font-weight: 600;">INR {{ '%.2f'|format(item.price) }}</td>
+                    <td>{{ item.stock_qty }}</td>
+                    <td>
+                        {% if item.available %}
+                            <span class="status-available">Available</span>
+                        {% else %}
+                            <span class="status-unavailable">Out of Stock</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.created_at }}</td>
+                    <td>
+                        <button onclick='editItem({{ item.id }}, {{ item.name|tojson }}, {{ item.price }}, {{ item.emoji|tojson }}, {{ item.stock_qty }})' class="btn btn-success">Edit</button>
+                        <a href="{{ url_for('toggle_menu', menu_id=item.id) }}" class="btn btn-warning">
+                            {% if item.available %}Disable{% else %}Enable{% endif %}
+                        </a>
+                        <a href="{{ url_for('delete_menu', menu_id=item.id) }}"
+                           onclick="return confirm('Delete {{ item.name }}?')"
+                           class="btn btn-danger">Delete</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <p style="text-align: center; padding: 30px; color: #666;">No menu items yet.</p>
+        {% endif %}
+
+        <div class="back-link">
+            <a href="{{ url_for('admin') }}">Back to Admin Dashboard</a>
+        </div>
+    </div>
+
+    <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+        <div style="background:white; max-width:500px; margin:100px auto; padding:30px; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+            <h3 style="margin-bottom: 16px;">Edit Menu Item</h3>
+            <form method="POST" id="editForm">
+                <input type="text" id="editEmoji" name="emoji" placeholder="Emoji (optional)" style="width:100%; margin:10px 0;">
+                <input type="text" id="editName" name="name" placeholder="Item Name" required style="width:100%; margin:10px 0;">
+                <input type="number" id="editPrice" name="price" placeholder="Price" step="0.01" min="0" required style="width:100%; margin:10px 0;">
+                <input type="number" id="editStockQty" name="stock_qty" placeholder="Stock Qty" min="0" required style="width:100%; margin:10px 0;">
+                <button type="submit" class="btn btn-success">Save Changes</button>
+                <button type="button" onclick="closeEdit()" class="btn btn-danger">Cancel</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function editItem(id, name, price, emoji, stockQty) {
+            document.getElementById('editModal').style.display = 'flex';
+            document.getElementById('editForm').action = '/edit-menu/' + id;
+            document.getElementById('editName').value = name;
+            document.getElementById('editPrice').value = price;
+            document.getElementById('editEmoji').value = emoji;
+            document.getElementById('editStockQty').value = stockQty;
+        }
+
+        function closeEdit() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        document.getElementById('editModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeEdit();
+            }
+        });
+    </script>
+</body>
+</html>

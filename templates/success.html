@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Success - Catering System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+            padding: 24px;
+        }
+        h1 { margin: 0 0 8px; color: #111827; }
+        .muted { color: #4b5563; margin-bottom: 16px; }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 14px;
+            background: #f9fafb;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 13px;
+            background: #ffedd5;
+            color: #9a3412;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 9px;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+        th { background: #f3f4f6; }
+        .total {
+            text-align: right;
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+        }
+        .actions { text-align: center; margin-top: 16px; }
+        .btn {
+            display: inline-block;
+            text-decoration: none;
+            margin: 4px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-weight: 700;
+            color: #fff;
+            background: #4f46e5;
+        }
+        .btn.alt { background: #0f766e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Order Placed Successfully</h1>
+        <p class="muted">Your order has been recorded.</p>
+
+        <div class="card">
+            <p><strong>Order ID:</strong> #{{ order.id }}</p>
+            <p><strong>Customer:</strong> {{ order.username }}</p>
+            <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
+            <p><strong>Status:</strong> <span class="status">{{ order.status }}</span></p>
+            <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+            <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+            {% if order.payment_proof_path %}
+                <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View uploaded proof</a></p>
+            {% endif %}
+            <p><strong>Order Time:</strong> {{ order.time }}</p>
+            <p><strong>Total Quantity:</strong> {{ order.quantity }}</p>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Order Timeline</h3>
+            {% if timeline %}
+                {% for step in timeline %}
+                    <p><strong>{{ step.status }}</strong> - {{ step.changed_at }}{% if step.note %} ({{ step.note }}){% endif %}</p>
+                {% endfor %}
+            {% else %}
+                <p>No timeline entries yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Order Items</h3>
+            <table>
+                <tr>
+                    <th>Item</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Subtotal</th>
+                </tr>
+                {% for item in order_items %}
+                    <tr>
+                        <td>{{ item.item_name }}</td>
+                        <td>INR {{ '%.2f'|format(item.item_price) }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+            <div class="total">Grand Total: INR {{ '%.2f'|format(order.total_price or 0) }}</div>
+        </div>
+
+        <div class="actions">
+            <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+            <a href="{{ url_for('my_orders') }}" class="btn alt">View My Orders</a>
+            <a href="{{ url_for('receipt', order_id=order.id) }}" class="btn alt">Download Receipt</a>
+        </div>
+    </div>
+</body>
+</html>

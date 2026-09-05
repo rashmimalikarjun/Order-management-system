@@ -1,0 +1,86 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Catering System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            max-width: 460px;
+            margin: 80px auto;
+            background: #fff;
+            border-radius: 14px;
+            padding: 24px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+        }
+        h2 { margin: 0 0 14px; color: #111827; }
+        label { display: block; margin-bottom: 6px; font-weight: 700; color: #374151; }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .btn {
+            width: 100%;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            background: #2563eb;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .err {
+            background: #fee2e2;
+            color: #991b1b;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-weight: 700;
+        }
+        .hint {
+            margin-top: 10px;
+            color: #6b7280;
+            font-size: 13px;
+        }
+        .nav { margin-top: 12px; text-align: center; }
+        .nav a { color: #2563eb; text-decoration: none; font-weight: 700; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Admin Login</h2>
+        {% if error == 'invalid_credentials' %}
+            <div class="err">Invalid admin username or password.</div>
+        {% endif %}
+        {% if error == 'admin_not_configured' %}
+            <div class="err">Admin login is disabled until secure `ADMIN_USERNAME` and `ADMIN_PASSWORD` env vars are set.</div>
+        {% endif %}
+        <form method="POST" action="{{ url_for('login_admin') }}">
+            <label for="username">Admin Username</label>
+            <input id="username" name="username" type="text" required {% if not admin_login_enabled %}disabled{% endif %}>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required {% if not admin_login_enabled %}disabled{% endif %}>
+            <button class="btn" type="submit" {% if not admin_login_enabled %}disabled{% endif %}>Login</button>
+        </form>
+        {% if admin_login_enabled %}
+            <p class="hint">Use the admin credentials from your environment variables.</p>
+        {% else %}
+            <p class="hint">Set strong `ADMIN_USERNAME` and `ADMIN_PASSWORD` values in Render, then redeploy.</p>
+        {% endif %}
+        <div class="nav">
+            <a href="{{ url_for('index') }}">Back to Home</a>
+        </div>
+    </div>
+</body>
+</html>

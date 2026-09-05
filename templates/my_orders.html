@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Orders - Catering System</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        h2 { color: #333; margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 600; }
+        input[type="text"] {
+            width: 100%;
+            max-width: 400px;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .order-card {
+            border: 2px solid #ddd;
+            padding: 25px;
+            margin: 20px 0;
+            border-radius: 15px;
+            background: #f9f9f9;
+            transition: all 0.3s ease;
+        }
+        .order-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .status-pending { color: orange; font-weight: bold; }
+        .status-preparing { color: blue; font-weight: bold; }
+        .status-ready { color: green; font-weight: bold; }
+        .status-delivered { color: purple; font-weight: bold; }
+        .cancel-btn {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+        .cancel-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(250, 112, 154, 0.4);
+        }
+        .alert-success {
+            background: #d1e7dd;
+            color: #0f5132;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #0f5132;
+            margin: 20px 0;
+        }
+        .alert-error {
+            background: #f8d7da;
+            color: #842029;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #842029;
+            margin: 20px 0;
+        }
+        .nav-links {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .nav-links a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            margin: 0 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📋 My Order History</h2>
+        
+        {% if request.args.get('cancelled') %}
+            <p class="alert-success">✅ Order cancelled successfully!</p>
+        {% endif %}
+        
+        {% if request.args.get('error') == 'cannot_cancel' %}
+            <p class="alert-error">❌ Cannot cancel order - it's already being prepared or completed!</p>
+        {% endif %}
+        
+        <h3>Orders for: <strong>{{ username }}</strong></h3>
+        
+        {% if orders %}
+            <p style="margin: 10px 0;">Total Orders: <strong>{{ orders|length }}</strong></p>
+            
+            {% for order in orders %}
+                <div class="order-card">
+                    <h4>Order #{{ order.id }} - {{ order.menu }}</h4>
+                    <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+                    <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
+                    <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
+                    <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+                    {% if order.payment_proof_path %}
+                        <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View proof</a></p>
+                    {% endif %}
+                    <p>
+                        <strong>Status:</strong> 
+                        <span class="status-{{ order.status|lower }}">{{ order.status }}</span>
+                    </p>
+                    <p><strong>Ordered:</strong> {{ order.time }}</p>
+                    <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+                    <p><a href="{{ url_for('receipt', order_id=order.id) }}" style="color:#667eea; font-weight:600;">Receipt / Timeline</a></p>
+                    
+                    {% if order.status == 'Pending' %}
+                        <p style="color: orange;">⏳ Your order is waiting to be prepared</p>
+                        <a href="{{ url_for('cancel_order', order_id=order.id) }}" 
+                           class="cancel-btn"
+                           onclick="return confirm('Are you sure you want to cancel Order #{{ order.id }}?')">
+                            🗑️ Cancel Order
+                        </a>
+                    {% elif order.status == 'Preparing' %}
+                        <p style="color: blue;">👨‍🍳 Your order is being prepared</p>
+                        <small style="color: gray;">⚠️ Cannot cancel - already in preparation</small>
+                    {% elif order.status == 'Ready' %}
+                        <p style="color: green;">✅ Your order is ready for pickup!</p>
+                    {% elif order.status == 'Delivered' %}
+                        <p style="color: purple;">🎉 Order completed!</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="alert-error">No orders found for username: <strong>{{ username }}</strong></p>
+            <p>You haven't placed any orders yet. <a href="{{ url_for('order') }}" style="color: #667eea; font-weight: 600;">Place your first order!</a></p>
+        {% endif %}
+        
+        <div class="nav-links">
+            <a href="{{ url_for('index') }}">Home</a> | <a href="{{ url_for('order') }}">Place New Order</a> | <a href="{{ url_for('status') }}">Status</a> | <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Manage Orders</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    .meta { color: #475569; margin-top: 4px; font-size: 14px; }
+    .btn {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #0f766e; }
+    .btn.ghost { background: #334155; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .stat {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+    .stat .label { font-size: 12px; color: #64748b; font-weight: 700; }
+    .stat .value { font-size: 24px; font-weight: 800; color: #0f172a; }
+    .filters {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .filter-grid label {
+      display: block;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+    .filter-grid input, .filter-grid select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .filter-actions { display: flex; gap: 8px; align-items: center; }
+    .summary { margin: 8px 0 16px; font-size: 14px; color: #334155; font-weight: 600; }
+    .qr-panel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .qr-preview {
+      width: 150px;
+      height: 150px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #fff;
+    }
+    .msg {
+      margin: 0 0 10px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .msg.ok { background: #dcfce7; color: #166534; }
+    .msg.err { background: #fee2e2; color: #991b1b; }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1180px;
+    }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 12px 10px;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #f8fafc;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    th.actions-col { text-align: center; width: 190px; }
+    .status-pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      display: inline-block;
+    }
+    .status-pending { background: #ffedd5; color: #9a3412; }
+    .status-preparing { background: #dbeafe; color: #1e3a8a; }
+    .status-ready { background: #dcfce7; color: #166534; }
+    .status-delivered { background: #ede9fe; color: #5b21b6; }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(74px, 1fr));
+      gap: 6px;
+      min-width: 176px;
+    }
+    .actions a {
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      border: 1px solid #cbd5e1;
+      color: #1e293b;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #fff;
+      line-height: 1.15;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .actions a:hover { border-color: #2563eb; color: #2563eb; }
+    .actions .detail-link {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+    .actions .ticket-link {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+      color: #0f766e;
+    }
+    .actions .status-link {
+      background: #f8fafc;
+      color: #334155;
+    }
+    .actions .cash-link {
+      grid-column: 1 / -1;
+      background: #fef3c7;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+    .empty {
+      padding: 20px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Manage Orders</h2>
+        <p class="meta">Search, filter, sort and update order workflow.</p>
+      </div>
+      <div>
+        <a href="{{ url_for('manage_menu') }}" class="btn secondary">Manage Menu Items</a>
+        <a href="{{ url_for('admin_report_csv', range='daily') }}" class="btn secondary">Daily CSV</a>
+        <a href="{{ url_for('admin_report_csv', range='weekly') }}" class="btn secondary">Weekly CSV</a>
+        <a href="{{ url_for('admin_finance') }}" class="btn secondary">Finance Controller</a>
+        <a href="{{ url_for('reconciliation_dashboard') }}" class="btn secondary">Reconciliation</a>
+        <a href="{{ url_for('admin_audit_logs') }}" class="btn secondary">Audit Logs</a>
+        <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+        <a href="{{ url_for('logout') }}" class="btn ghost">Logout</a>
+      </div>
+    </div>
+
+    {% if pending_count > 0 %}
+      <div class="msg err" style="margin-bottom:14px;">{{ pending_count }} pending order(s) need attention.</div>
+    {% endif %}
+
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Visible Orders</div>
+        <div class="value">{{ orders|length }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Today's Orders</div>
+        <div class="value">{{ dashboard_stats.today_orders }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Today's Revenue</div>
+        <div class="value">INR {{ '%.2f'|format(dashboard_stats.today_revenue or 0) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Revenue (Visible)</div>
+        <div class="value">INR {{ '%.2f'|format(total_revenue or 0) }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pending Orders</div>
+        <div class="value">{{ pending_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Preparing / Ready</div>
+        <div class="value">{{ dashboard_stats.preparing }} / {{ dashboard_stats.ready }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Low Stock Items</div>
+        <div class="value">{{ dashboard_stats.low_stock }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Finance Cases</div>
+        <div class="value">{{ dashboard_stats.finance_open }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Delivered Unpaid</div>
+        <div class="value">{{ dashboard_stats.finance_candidates }}</div>
+      </div>
+    </div>
+
+    <div class="qr-panel">
+      <h3 style="margin:0 0 10px;">Dashboard Insights</h3>
+      <div class="filter-grid">
+        <div>
+          <strong>All Revenue</strong>
+          <p class="meta">INR {{ '%.2f'|format(dashboard_stats.all_revenue or 0) }} from {{ dashboard_stats.all_orders }} total order(s)</p>
+        </div>
+        <div>
+          <strong>Workflow</strong>
+          <p class="meta">Pending {{ dashboard_stats.pending }} | Preparing {{ dashboard_stats.preparing }} | Ready {{ dashboard_stats.ready }} | Delivered {{ dashboard_stats.delivered }}</p>
+        </div>
+      </div>
+      {% if top_items %}
+        <h4 style="margin:12px 0 8px;">Best-selling Items</h4>
+        <div class="table-wrap">
+          <table style="min-width:unset;">
+            <tr>
+              <th>Item</th>
+              <th>Sold</th>
+              <th>Revenue</th>
+            </tr>
+            {% for item in top_items %}
+              <tr>
+                <td>{{ item.item_name }}</td>
+                <td>{{ item.sold_qty }}</td>
+                <td>INR {{ '%.2f'|format(item.revenue or 0) }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if low_stock_items %}
+      <div class="msg err">
+        Low stock:
+        {% for item in low_stock_items %}
+          {{ item.name }} ({{ item.stock_qty }}){% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="qr-panel">
+      <h3 style="margin:0 0 10px;">Payment QR</h3>
+      {% if request.args.get('qr_success') %}
+        <p class="msg ok">QR image uploaded successfully.</p>
+      {% endif %}
+      {% if request.args.get('qr_error') == 'missing' %}
+        <p class="msg err">Please choose a QR image file.</p>
+      {% elif request.args.get('qr_error') == 'type' %}
+        <p class="msg err">Invalid file type. Use PNG, JPG, JPEG or WEBP.</p>
+      {% endif %}
+      <div class="qr-grid">
+        <div>
+          {% if qr_image_url %}
+            <img src="{{ qr_image_url }}" alt="Admin QR" class="qr-preview">
+          {% else %}
+            <div class="qr-preview" style="display:flex; align-items:center; justify-content:center; color:#64748b; font-size:12px; text-align:center; padding:8px;">No custom QR uploaded</div>
+          {% endif %}
+        </div>
+        <div>
+          <form method="POST" action="{{ url_for('upload_admin_qr') }}" enctype="multipart/form-data">
+            <label for="qr_image">Upload your QR image</label>
+            <input id="qr_image" name="qr_image" type="file" accept=".png,.jpg,.jpeg,.webp" required>
+            <button type="submit" class="btn" style="margin-top:10px;">Upload QR</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <form method="GET" action="{{ url_for('admin') }}" class="filters">
+      <div class="filter-grid">
+        <div>
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" placeholder="Search user" value="{{ filters.username }}">
+        </div>
+        <div>
+          <label for="status">Status</label>
+          <select id="status" name="status">
+            <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+            <option value="Pending" {% if filters.status == 'Pending' %}selected{% endif %}>Pending</option>
+            <option value="Preparing" {% if filters.status == 'Preparing' %}selected{% endif %}>Preparing</option>
+            <option value="Ready" {% if filters.status == 'Ready' %}selected{% endif %}>Ready</option>
+            <option value="Delivered" {% if filters.status == 'Delivered' %}selected{% endif %}>Delivered</option>
+          </select>
+        </div>
+        <div>
+          <label for="date_from">From Date</label>
+          <input id="date_from" name="date_from" type="date" value="{{ filters.date_from }}">
+        </div>
+        <div>
+          <label for="date_to">To Date</label>
+          <input id="date_to" name="date_to" type="date" value="{{ filters.date_to }}">
+        </div>
+        <div>
+          <label for="sort">Sort By</label>
+          <select id="sort" name="sort">
+            <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Date Newest</option>
+            <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Date Oldest</option>
+            <option value="quantity_desc" {% if filters.sort == 'quantity_desc' %}selected{% endif %}>Quantity High-Low</option>
+            <option value="quantity_asc" {% if filters.sort == 'quantity_asc' %}selected{% endif %}>Quantity Low-High</option>
+            <option value="status_asc" {% if filters.sort == 'status_asc' %}selected{% endif %}>Status Workflow</option>
+            <option value="status_desc" {% if filters.sort == 'status_desc' %}selected{% endif %}>Status Reverse</option>
+            <option value="total_desc" {% if filters.sort == 'total_desc' %}selected{% endif %}>Total High-Low</option>
+            <option value="total_asc" {% if filters.sort == 'total_asc' %}selected{% endif %}>Total Low-High</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="btn">Apply</button>
+          <a href="{{ url_for('admin') }}" class="btn ghost">Reset</a>
+        </div>
+      </div>
+    </form>
+
+    <p class="summary">Showing {{ orders|length }} order(s)</p>
+
+    {% if orders %}
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th>S.No</th>
+            <th>Order ID</th>
+            <th>Username</th>
+            <th>Contact</th>
+            <th>Items Summary</th>
+            <th>Qty</th>
+            <th>Total</th>
+            <th>Payment</th>
+            <th>Proof</th>
+            <th>Status</th>
+            <th>Order Time</th>
+            <th>Last Updated</th>
+            <th class="actions-col">Actions</th>
+          </tr>
+          {% for order in orders %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>#{{ order.id }}</td>
+              <td>{{ order.username }}</td>
+              <td>{{ order.contact_number or '-' }}</td>
+              <td>{{ order.menu }}</td>
+              <td>{{ order.quantity }}</td>
+              <td><strong>INR {{ '%.2f'|format(order.total_price or 0) }}</strong></td>
+              <td>{{ order.payment_method }} / {{ order.payment_status }}</td>
+              <td>
+                {% if order.payment_proof_path %}
+                  <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>
+                <span class="status-pill status-{{ order.status|lower }}">{{ order.status }}</span>
+              </td>
+              <td>{{ order.time }}</td>
+              <td>{{ order.status_time }}</td>
+              <td class="actions">
+                <a class="detail-link" href="{{ url_for('admin_order_detail', order_id=order.id) }}">View</a>
+                <a class="ticket-link" href="{{ url_for('kitchen_ticket', order_id=order.id) }}" target="_blank">Ticket</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Pending') }}">Pending</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Preparing') }}">Preparing</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Ready') }}">Ready</a>
+                <a class="status-link" href="{{ url_for('update_status', order_id=order.id, status='Delivered') }}">Delivered</a>
+                {% if order.payment_method == 'Cash' and order.payment_status != 'Paid' %}
+                  <a class="cash-link" href="{{ url_for('mark_cash_paid', order_id=order.id) }}">Mark Cash Paid</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">No orders available for selected filters.</div>
+    {% endif %}
+
+    <div class="qr-panel" style="margin-top:16px;">
+      <h3 style="margin:0 0 10px;">Recent Audit Activity</h3>
+      {% if recent_logs %}
+        <table style="min-width:unset;">
+          <tr>
+            <th>ID</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Details</th>
+            <th>Time</th>
+          </tr>
+          {% for log in recent_logs %}
+            <tr>
+              <td>#{{ log.id }}</td>
+              <td>{{ log.actor_type }}:{{ log.actor_name }}</td>
+              <td>{{ log.action }}</td>
+              <td>{{ log.details or '-' }}</td>
+              <td>{{ log.created_at }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      {% else %}
+        <p class="meta">No audit entries yet.</p>
+      {% endif %}
+    </div>
+  </div>
+  <script>
+    (function () {
+      var pending = {{ pending_count or 0 }};
+      if (pending <= 0) return;
+      document.title = "(" + pending + ") Pending Orders";
+      try {
+        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.08, audioCtx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.20);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.22);
+      } catch (e) {}
+    })();
+  </script>
+</body>
+</html>

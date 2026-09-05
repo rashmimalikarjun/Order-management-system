@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home - Catering System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            font-size: 2.5em;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 20px;
+        }
+
+        button, .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .nav-links {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .nav-links a {
+            color: #6772ed;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 600;
+        }
+
+        .special-offer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Corporate Catering OMS</h1>
+        <h1>Welcome to Our Catering System</h1>
+
+        <div style="text-align: center; margin: 40px 0;">
+            <p style="font-size: 1.2em; color: #666; margin-bottom: 40px;">
+                Delicious meals delivered with care
+            </p>
+            
+            <h2>Select Your Role</h2>
+            
+            <form method="POST" action="{{ url_for('index') }}">
+                <button type="submit" name="role" value="user">
+                    👤 I'm a Customer
+                </button>
+                <br>
+                <button type="submit" name="role" value="admin" class="btn-secondary">
+                    👨‍💼 Admin Dashboard
+                </button>
+            </form>
+        </div>
+
+        <div class="nav-links">
+            <h3>Quick Links</h3>
+            <a href="{{ url_for('my_orders') }}">📋 My Order History</a> |
+            <a href="{{ url_for('status') }}">🔍 Quick Status Check</a>
+        </div>
+
+        <div class="special-offer">
+            <h3>✨ Nice to see you!</h3>
+            <p>Thank you for choosing our catering services. We're excited to serve you!</p>
+        </div>
+    </div>
+</body>
+</html>

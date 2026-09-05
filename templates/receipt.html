@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt #{{ order.id }} - Catering System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: #eef2f7;
+            color: #111827;
+            padding: 24px;
+        }
+        .receipt {
+            max-width: 820px;
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid #dbe3ef;
+            border-radius: 8px;
+            padding: 28px;
+        }
+        .top {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            border-bottom: 2px solid #111827;
+            padding-bottom: 14px;
+            margin-bottom: 16px;
+        }
+        h1, h2, h3 { margin: 0; }
+        .muted { color: #64748b; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .box {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            background: #f8fafc;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            font-size: 14px;
+        }
+        th { background: #f1f5f9; }
+        .total {
+            text-align: right;
+            margin-top: 14px;
+            font-size: 20px;
+            font-weight: 800;
+        }
+        .actions {
+            max-width: 820px;
+            margin: 14px auto 0;
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 14px;
+            background: #2563eb;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .receipt { border: none; }
+            .actions { display: none; }
+        }
+        @media (max-width: 700px) {
+            .top, .grid { grid-template-columns: 1fr; display: block; }
+            .box { margin-bottom: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt">
+        <div class="top">
+            <div>
+                <h1>Receipt</h1>
+                <p class="muted">Order Management System</p>
+            </div>
+            <div>
+                <h2>#{{ order.id }}</h2>
+                <p class="muted">{{ order.time }}</p>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="box">
+                <h3>Customer</h3>
+                <p><strong>Name:</strong> {{ order.username }}</p>
+                <p><strong>Contact:</strong> {{ order.contact_number or 'N/A' }}</p>
+                <p><strong>Status:</strong> {{ order.status }}</p>
+            </div>
+            <div class="box">
+                <h3>Payment</h3>
+                <p><strong>Method:</strong> {{ order.payment_method }}</p>
+                <p><strong>Status:</strong> {{ order.payment_status }}</p>
+                <p><strong>Reference:</strong> {{ order.payment_reference or 'N/A' }}</p>
+            </div>
+        </div>
+
+        <h3>Items</h3>
+        <table>
+            <tr>
+                <th>Item</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Subtotal</th>
+            </tr>
+            {% for item in order_items %}
+                <tr>
+                    <td>{{ item.item_name }}</td>
+                    <td>INR {{ '%.2f'|format(item.item_price) }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+        <div class="total">Grand Total: INR {{ '%.2f'|format(order.total_price or 0) }}</div>
+
+        <div class="box" style="margin-top:16px;">
+            <h3>Timeline</h3>
+            {% if timeline %}
+                {% for step in timeline %}
+                    <p><strong>{{ step.status }}</strong> - {{ step.changed_at }}{% if step.changed_by %} by {{ step.changed_by }}{% endif %}</p>
+                {% endfor %}
+            {% else %}
+                <p class="muted">No timeline entries yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="actions">
+        <button class="btn" onclick="window.print()">Print / Save PDF</button>
+        <a class="btn" href="{{ url_for('my_orders') }}">Back to My Orders</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,182 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Detail - Admin</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+            padding: 24px;
+        }
+        h2 { margin: 0 0 12px; }
+        .meta { color: #475569; margin: 0 0 16px; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+        .card {
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px;
+            background: #f8fafc;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+        th, td {
+            border-bottom: 1px solid #e2e8f0;
+            text-align: left;
+            padding: 10px 8px;
+            font-size: 14px;
+        }
+        th { background: #f1f5f9; }
+        .actions a, .actions button {
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: #fff;
+            background: #2563eb;
+            font-size: 13px;
+            font-weight: 700;
+            border: none;
+            cursor: pointer;
+        }
+        .actions form { display: inline-block; margin: 0; }
+        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Order #{{ order.id }} Details</h2>
+        <p class="meta">Customer: {{ order.username }}</p>
+
+        <div class="grid">
+            <div class="card">
+                <p><strong>Contact:</strong> {{ order.contact_number or '-' }}</p>
+                <p><strong>Status:</strong> {{ order.status }}</p>
+                <p><strong>Total:</strong> INR {{ '%.2f'|format(order.total_price or 0) }}</p>
+                <p><strong>Quantity:</strong> {{ order.quantity }}</p>
+                <p><strong>Payment:</strong> {{ order.payment_method }} ({{ order.payment_status }})</p>
+                {% if order.payment_proof_path %}
+                    <p><strong>Payment Proof:</strong> <a href="{{ url_for('static', filename=order.payment_proof_path) }}" target="_blank">View uploaded proof</a></p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <p><strong>Ordered:</strong> {{ order.time }}</p>
+                <p><strong>Last Updated:</strong> {{ order.status_time }}</p>
+                <p><strong>Summary:</strong> {{ order.menu }}</p>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px;">
+            <h3 style="margin-top:0;">Finance Controller</h3>
+            {% if finance_case %}
+                <p>
+                    <strong>Financial Case:</strong>
+                    #{{ finance_case.id }} / {{ finance_case.status }} / {{ finance_case.risk_tier }}
+                </p>
+                <div class="actions">
+                    <a href="{{ url_for('admin_financial_case_detail', case_id=finance_case.id) }}">View Financial Case</a>
+                </div>
+            {% else %}
+                <p class="meta">No financial case is linked to this order.</p>
+                <div class="actions">
+                    <form method="POST" action="{{ url_for('admin_create_financial_case') }}">
+                        <input type="hidden" name="order_id" value="{{ order.id }}">
+                        <button type="submit">Open Financial Case</button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+
+        <h3>Items</h3>
+        <table>
+            <tr>
+                <th>Item</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Subtotal</th>
+            </tr>
+            {% for item in order_items %}
+                <tr>
+                    <td>{{ item.item_name }}</td>
+                    <td>INR {{ '%.2f'|format(item.item_price) }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>INR {{ '%.2f'|format(item.subtotal) }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+
+        <h3 style="margin-top:16px;">Order Timeline</h3>
+        {% if timeline %}
+            <table>
+                <tr>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Changed By</th>
+                    <th>Note</th>
+                </tr>
+                {% for step in timeline %}
+                    <tr>
+                        <td>{{ step.status }}</td>
+                        <td>{{ step.changed_at }}</td>
+                        <td>{{ step.changed_by }}</td>
+                        <td>{{ step.note or '-' }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>No timeline entries yet.</p>
+        {% endif %}
+
+        <h3 style="margin-top:16px;">Audit Trail</h3>
+        {% if logs %}
+            <table>
+                <tr>
+                    <th>ID</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Time</th>
+                </tr>
+                {% for log in logs %}
+                    <tr>
+                        <td>#{{ log.id }}</td>
+                        <td>{{ log.actor_type }}:{{ log.actor_name }}</td>
+                        <td>{{ log.action }}</td>
+                        <td>{{ log.details or '-' }}</td>
+                        <td>{{ log.created_at }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>No audit entries mapped to this order yet.</p>
+        {% endif %}
+
+        <div class="actions" style="margin-top:16px;">
+            <a href="{{ url_for('admin') }}">Back to Admin</a>
+            <a href="{{ url_for('kitchen_ticket', order_id=order.id) }}" target="_blank">Kitchen Ticket</a>
+            <a href="{{ url_for('admin_audit_logs') }}">View Full Audit Logs</a>
+        </div>
+    </div>
+</body>
+</html>

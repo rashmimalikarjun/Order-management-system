@@ -1,0 +1,84 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Logs - Admin</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+            padding: 24px;
+        }
+        h2 { margin: 0 0 12px; }
+        .meta { color: #475569; margin-bottom: 16px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border-bottom: 1px solid #e2e8f0;
+            text-align: left;
+            padding: 10px 8px;
+            font-size: 14px;
+            vertical-align: top;
+        }
+        th { background: #f1f5f9; }
+        .actions a {
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 8px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            color: #fff;
+            background: #2563eb;
+            font-size: 13px;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Audit Logs</h2>
+        <p class="meta">Latest {{ logs|length }} entries.</p>
+
+        {% if logs %}
+            <table>
+                <tr>
+                    <th>ID</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Time</th>
+                </tr>
+                {% for log in logs %}
+                    <tr>
+                        <td>#{{ log.id }}</td>
+                        <td>{{ log.actor_type }}:{{ log.actor_name }}</td>
+                        <td>{{ log.action }}</td>
+                        <td>{{ log.details or '-' }}</td>
+                        <td>{{ log.created_at }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        {% else %}
+            <p>No logs yet.</p>
+        {% endif %}
+
+        <div class="actions" style="margin-top:16px;">
+            <a href="{{ url_for('admin') }}">Back to Admin</a>
+        </div>
+    </div>
+</body>
+</html>

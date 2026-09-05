@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reconciliation Batch #{{ batch.id }} - Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      min-height: 100vh;
+      color: #0f172a;
+      padding: 24px;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+      padding: 24px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    h2 { margin: 0; font-size: 28px; }
+    h3 { margin: 0 0 10px; }
+    .meta { color: #475569; margin: 4px 0 0; font-size: 14px; }
+    .btn {
+      text-decoration: none;
+      color: #fff;
+      background: #2563eb;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.ghost { background: #334155; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+    .stat .label { font-size: 12px; color: #64748b; font-weight: 700; }
+    .stat .value { font-size: 24px; font-weight: 800; color: #0f172a; }
+    .stat.highlight { background: #ecfdf5; border-color: #a7f3d0; }
+    .stat.highlight .value { color: #0f766e; }
+    .table-wrap { overflow-x: auto; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+      padding: 10px 8px;
+      font-size: 14px;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .pill {
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      display: inline-block;
+      white-space: nowrap;
+      text-transform: capitalize;
+    }
+    .pill.matched { background: #dcfce7; color: #166534; }
+    .pill.amount_mismatch { background: #fef3c7; color: #92400e; }
+    .pill.duplicate_settlement { background: #fee2e2; color: #991b1b; }
+    .pill.no_matching_order { background: #e2e8f0; color: #334155; }
+    .pill.already_reconciled { background: #dbeafe; color: #1e3a8a; }
+    .empty {
+      padding: 20px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      color: #475569;
+    }
+    .agent-section {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 2px solid #e2e8f0;
+    }
+    .agent-btn {
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      font-size: 16px;
+      padding: 12px 18px;
+    }
+    .agent-btn:hover {
+      background: linear-gradient(135deg, #6d28d9, #5b21b6);
+    }
+    .agent-panel {
+      margin-top: 20px;
+      padding: 20px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      display: none;
+    }
+    .agent-panel.visible {
+      display: block;
+    }
+    .agent-panel.error {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+    .agent-source {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .agent-disclaimer {
+      font-size: 13px;
+      color: #475569;
+      font-style: italic;
+      margin-top: 16px;
+      padding: 10px;
+      background: #eff6ff;
+      border-left: 3px solid #3b82f6;
+      border-radius: 4px;
+    }
+    .agent-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .agent-metric {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .agent-metric .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+    .agent-metric .value { font-size: 20px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+    .priority-HIGH { background: #fee2e2; color: #991b1b; }
+    .priority-MEDIUM { background: #fef3c7; color: #92400e; }
+    .priority-LOW { background: #e0e7ff; color: #3730a3; }
+    .agent-exception-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .agent-exception-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .agent-exception-details {
+      font-size: 14px;
+      color: #334155;
+      line-height: 1.6;
+    }
+    .agent-exception-details strong {
+      color: #1e293b;
+    }
+    .agent-action-btn {
+      background: #059669;
+      font-size: 13px;
+      padding: 8px 12px;
+      margin-top: 12px;
+    }
+    .agent-action-btn:hover {
+      background: #047857;
+    }
+    .loading-spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div>
+        <h2>Reconciliation Batch #{{ batch.id }}</h2>
+        <p class="meta">Run at {{ batch.created_at }} by {{ batch.triggered_by }}.</p>
+      </div>
+      <div>
+        <form method="post" action="{{ url_for('analyze_reconciliation_batch_route', batch_id=batch.id) }}" style="display: inline;">
+          <button type="submit" class="btn agent-btn" id="analyzeBtn">
+            🤖 Analyze with Finance Controller Agent
+          </button>
+        </form>
+        <a href="{{ url_for('reconciliation_dashboard') }}" class="btn ghost">Back to Reconciliation</a>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat highlight">
+        <div class="label">Match Rate</div>
+        <div class="value">{{ '%.2f'|format(batch.match_rate) }}%</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Records</div>
+        <div class="value">{{ batch.record_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Matched</div>
+        <div class="value">{{ batch.matched_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Amount Mismatch</div>
+        <div class="value">{{ batch.amount_mismatch_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Duplicate Settlement</div>
+        <div class="value">{{ batch.duplicate_settlement_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">No Matching Order</div>
+        <div class="value">{{ batch.no_matching_order_count }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Already Reconciled</div>
+        <div class="value">{{ batch.already_reconciled_count }}</div>
+      </div>
+    </div>
+
+    <h3>Exception List ({{ exceptions|length }})</h3>
+    {% if exceptions %}
+      <div class="table-wrap">
+        <table>
+          <tr>
+            <th>Ref</th>
+            <th>Amount</th>
+            <th>Settled At</th>
+            <th>Source</th>
+            <th>Order</th>
+            <th>Classification</th>
+            <th>Reason</th>
+          </tr>
+          {% for s in exceptions %}
+            <tr>
+              <td>{{ s.external_ref or '(blank)' }}</td>
+              <td>INR {{ '%.2f'|format(s.amount) }}</td>
+              <td>{{ s.settled_at }}</td>
+              <td>{{ s.source }}</td>
+              <td>{% if s.order_id %}#{{ s.order_id }}{% else %}-{% endif %}</td>
+              <td><span class="pill {{ s.classification }}">{{ s.classification.replace('_', ' ') }}</span></td>
+              <td>{{ s.reason }}</td>
+            </tr>
+          {% endfor %}
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">No exceptions in this batch.</div>
+    {% endif %}
+
+    <h3>Full Settlement List ({{ settlements|length }})</h3>
+    <div class="table-wrap">
+      <table>
+        <tr>
+          <th>Ref</th>
+          <th>Amount</th>
+          <th>Settled At</th>
+          <th>Source</th>
+          <th>Order</th>
+          <th>Classification</th>
+          <th>Reason</th>
+        </tr>
+        {% for s in settlements %}
+          <tr>
+            <td>{{ s.external_ref or '(blank)' }}</td>
+            <td>INR {{ '%.2f'|format(s.amount) }}</td>
+            <td>{{ s.settled_at }}</td>
+            <td>{{ s.source }}</td>
+            <td>{% if s.order_id %}#{{ s.order_id }}{% else %}-{% endif %}</td>
+            <td><span class="pill {{ s.classification }}">{{ s.classification.replace('_', ' ') }}</span></td>
+            <td>{{ s.reason }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </div>
+
+    <!-- Finance Controller Agent Section -->
+    <div class="agent-section" id="agentSection">
+      <h3>Finance Controller Agent Analysis</h3>
+      
+      {% if agent_result %}
+        <div class="agent-panel visible{% if agent_result.error %} error{% endif %}">
+          {% if agent_result.error %}
+            <p><strong>Error:</strong> {{ agent_result.error }}</p>
+          {% else %}
+            <div class="agent-source">
+              Analysis source: {% if agent_result.analysis_source == "gemini_ai_v1" %}AI{% else %}Deterministic fallback{% endif %}
+            </div>
+            
+            <h4>Batch Summary</h4>
+            <div class="agent-metrics">
+              <div class="agent-metric">
+                <div class="label">Total Records</div>
+                <div class="value">{{ agent_result.batch_metrics.total_records }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Matched</div>
+                <div class="value">{{ agent_result.batch_metrics.matched_records }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Exceptions</div>
+                <div class="value">{{ agent_result.batch_metrics.exception_records }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Match Rate</div>
+                <div class="value">{{ '%.1f'|format(agent_result.batch_metrics.match_rate_percent) }}%</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Reconciled Amount</div>
+                <div class="value">INR {{ '%.2f'|format(agent_result.batch_metrics.reconciled_amount_inr) }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Unresolved Amount</div>
+                <div class="value">INR {{ '%.2f'|format(agent_result.batch_metrics.unresolved_amount_inr) }}</div>
+              </div>
+            </div>
+            
+            <h4>Exception Breakdown</h4>
+            <div class="agent-metrics">
+              <div class="agent-metric">
+                <div class="label">Amount Mismatch</div>
+                <div class="value">{{ agent_result.exception_breakdown.amount_mismatch }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Duplicate Settlement</div>
+                <div class="value">{{ agent_result.exception_breakdown.duplicate_settlement }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">No Matching Order</div>
+                <div class="value">{{ agent_result.exception_breakdown.no_matching_order }}</div>
+              </div>
+              <div class="agent-metric">
+                <div class="label">Already Reconciled</div>
+                <div class="value">{{ agent_result.exception_breakdown.already_reconciled }}</div>
+              </div>
+            </div>
+            
+            <h4>Prioritized Exceptions</h4>
+            {% if agent_result.prioritized_exceptions %}
+              {% for item in agent_result.prioritized_exceptions %}
+                <div class="agent-exception-card">
+                  <div class="agent-exception-header">
+                    <div>
+                      <strong>Settlement #{{ item.settlement_id }}</strong>
+                      <span class="pill priority-{{ item.priority_level }}">{{ item.priority_level }}</span>
+                    </div>
+                    <div>Financial Impact: INR {{ '%.2f'|format(item.financial_impact_inr) }}</div>
+                  </div>
+                  <div class="agent-exception-details">
+                    <p><strong>Priority Reason:</strong> {{ item.reason_for_priority }}</p>
+                    
+                    {% set explanation = agent_result.exception_explanations | selectattr('settlement_id', 'equalto', item.settlement_id) | first %}
+                    {% if explanation %}
+                      <p><strong>What Happened:</strong> {{ explanation.what_happened }}</p>
+                      <p><strong>Why Failed:</strong> {{ explanation.why_reconciliation_failed }}</p>
+                      <p><strong>Financial Impact:</strong> {{ explanation.financial_impact }}</p>
+                      <p><strong>Order Info:</strong> {{ explanation.relevant_order_info }}</p>
+                    {% endif %}
+                    
+                    {% set recommendation = agent_result.recommendations | selectattr('settlement_id', 'equalto', item.settlement_id) | first %}
+                    {% if recommendation %}
+                      <p><strong>Recommended Action:</strong> {{ recommendation.recommended_action }}</p>
+                      <p><strong>Justification:</strong> {{ recommendation.action_justification }}</p>
+                      
+                      {% if recommendation.should_create_financial_case %}
+                        {% set settlement_data = settlements | selectattr('id', 'equalto', item.settlement_id) | first %}
+                        {% if settlement_data and settlement_data.order_id %}
+                          <form method="post" action="{{ url_for('admin_create_financial_case') }}" style="display: inline;">
+                            <input type="hidden" name="order_id" value="{{ settlement_data.order_id }}">
+                            <button type="submit" class="btn agent-action-btn">Create Financial Case</button>
+                          </form>
+                        {% endif %}
+                      {% endif %}
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="empty">No prioritized exceptions.</div>
+            {% endif %}
+            
+            <div class="agent-disclaimer">
+              <strong>Note:</strong> AI analysis is advisory. Financial actions require human approval.
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
