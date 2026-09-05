@@ -5,16 +5,14 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Logs and temp files
-*.log
-*.tmp
+# Database
+catering.db
+
+# Test cache
+tests/__pycache__/
 
 # Environment
 .env
 .env.local
 *.env.*
-
-# Dependencies
-.venv/
-venv/
 ```
