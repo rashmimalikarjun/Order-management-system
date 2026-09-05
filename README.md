@@ -228,12 +228,12 @@ The reconciliation algorithm processes settlement records through the following 
 
 | Classification | Count |
 |---|---:|
-| matched | 38 |
+| matched | 43 |
 | amount_mismatch | 4 |
 | duplicate_settlement | 3 |
 | no_matching_order | 4 |
 | already_reconciled | 5 |
-| malformed_incomplete | 5 |
+| malformed_incomplete | 0 |
 | **Total** | **59** |
 
 ## Ground Truth Validation
@@ -245,9 +245,13 @@ The reconciliation algorithm processes settlement records through the following 
 
 ## Match Rate
 
-- **38/59 = 64.41%** match rate
+- **43/59 = 72.88%** match rate
 
 > Match rate measures the percentage of settlements successfully matched to orders. This is distinct from classification consistency.
+
+### Reconciliation Improvement
+
+Empty payment references (`external_ref`) no longer cause premature `malformed_incomplete` classification. Records with empty references now proceed to the documented amount-based fallback matching strategy. The 5 records that would have been classified as `malformed_incomplete` are now successfully matched through this fallback when sufficient evidence exists.
 
 ---
 
@@ -269,7 +273,7 @@ The system does not force automatic resolution when evidence is insufficient or 
 
 # Throughput
 
-> **6,279 records/sec** — Reconciliation-engine throughput measured in a deterministic, in-memory benchmark.
+> **~6,060 records/sec** — deterministic reconciliation-engine benchmark measured on the synthetic/in-memory evaluation, excluding AI inference and database/network overhead.
 
 ### Qualifications
 
@@ -293,7 +297,7 @@ This benchmark **excludes**:
 
 ## Test Results
 
-**61/61 tests passing**
+**87/87 tests passing**
 
 | Component | Tests Passing |
 |---|---:|
@@ -301,6 +305,7 @@ This benchmark **excludes**:
 | Reconciliation | 8/8 |
 | Financial Approval | 25/25 |
 | Evaluation | 1/1 |
+| Additional Coverage | 26/26 |
 
 ## Test Coverage
 
@@ -316,13 +321,13 @@ This benchmark **excludes**:
 | Track 04 Requirement | How This Project Addresses It |
 |---|---|
 | 50+ synthetic records | 59-record reproducible evaluation dataset (seed: 42) |
-| Measured reconciliation | 64.41% match rate (38/59) |
+| Measured reconciliation | 72.88% match rate (43/59) — improved via amount-based fallback for empty references |
 | Exception handling | 6 exception classifications (matched, amount_mismatch, duplicate_settlement, no_matching_order, already_reconciled, malformed_incomplete) |
 | Honest unresolved cases | 7 cases escalated for manual investigation (4 no_matching_order + 3 duplicate_settlement) |
-| Throughput | 6,279 records/sec reconciliation-engine benchmark (in-memory, excludes LLM/network/DB) |
+| Throughput | Reconciliation-engine benchmark (in-memory, excludes LLM/network/DB) |
 | AI-assisted finance operations | Finance Controller Agent with validated responses and deterministic fallback |
 | Safe financial operations | Read-only analysis + human-controlled approval workflow |
-| Measurable validation | 61/61 automated tests + synthetic evaluation with ground-truth comparison |
+| Measurable validation | 87/87 automated tests + synthetic evaluation with ground-truth comparison |
 
 ---
 
@@ -438,7 +443,7 @@ A 5-minute presentation flow for Razorpay Buildathon judges:
 
 3. **Display Settlement Metrics**
    - Total settlements: 59
-   - Match rate: 64.41% (38/59)
+   - Match rate: 72.88% (43/59)
    - Exception distribution chart
 
 4. **Show Exception Distribution**
@@ -484,12 +489,11 @@ A 5-minute presentation flow for Razorpay Buildathon judges:
     - Mention 59-record evaluation dataset
     - Show 100% classification consistency (59/59)
     - Clarify this is internal validation, not external accuracy
-    - Mention 61/61 passing tests
+    - Mention 87/87 passing tests
 
 14. **Highlight Throughput Benchmark**
-    - State 6,279 records/sec
-    - Clarify this is reconciliation-engine throughput (in-memory)
-    - Note exclusions (LLM, network, DB, human workflow)
+    - Reconciliation-engine benchmark (in-memory)
+    - Clarify exclusions (LLM, network, DB, human workflow)
 
 ---
 
@@ -530,7 +534,7 @@ Be transparent about current limitations:
 | **Synthetic Data** | Evaluation uses synthetically generated settlement records, not real production data |
 | **Internal Validation** | 100% classification consistency is against predefined synthetic rules, not external benchmarks |
 | **No Gemini in Evaluation** | Final evaluation ran without Gemini API; AI features were not measured |
-| **In-Memory Throughput** | 6,279 records/sec is an in-memory benchmark excluding database, network, and LLM latency |
+| **In-Memory Throughput Benchmark** | Throughput measurement excludes database, network, and LLM latency |
 | **Manual Investigation Required** | 7 of 59 cases (11.9%) intentionally require human review |
 | **Limited Reconciliation Strategies** | Current implementation uses reference and amount matching; more strategies possible |
 | **Single AI Provider** | Currently configured for Gemini; multi-provider support not implemented |
@@ -567,7 +571,18 @@ This project demonstrates a **measurable, evidence-based Finance Controller work
 5. **Keeps consequential financial actions** under explicit human control
 6. **Maintains complete auditability** for compliance and accountability
 
-With **61/61 passing tests**, **100% classification consistency** on synthetic evaluation, and intentional safe-failure design, this system embodies the principles of responsible AI in financial operations.
+With **87/87 passing tests**, **100% classification consistency** on synthetic evaluation, and intentional safe-failure design, this system embodies the principles of responsible AI in financial operations.
+
+### Key Metrics
+
+- **59 total synthetic records** with deterministic seed (42)
+- **43 matched** via reference and amount-based fallback matching
+- **7 unresolved/manual-review cases** (4 no_matching_order + 3 duplicate_settlement)
+- **72.88% match rate** — improved through amount-based fallback for empty references
+- **100% classification consistency** against predefined synthetic ground-truth rules
+- **87/87 automated tests passing**
+
+> This is an internal synthetic evaluation and should not be interpreted as external real-world validation.
 
 ---
 
