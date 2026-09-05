@@ -472,7 +472,7 @@
         <div class="summary-cards">
           <div class="summary-card highlight">
             <div class="label">Match Rate</div>
-            <div class="value">{{ '%.2f'|format(batch_metrics.match_rate_percent) }}%</div>
+            <div class="value">{{ batch_metrics.match_rate_percent|percentage }}</div>
           </div>
           <div class="summary-card">
             <div class="label">Total Records</div>
@@ -488,11 +488,11 @@
           </div>
           <div class="summary-card">
             <div class="label">Reconciled Amount</div>
-            <div class="value">₹{{ '%,.2f'|format(batch_metrics.reconciled_amount_inr) }}</div>
+            <div class="value">{{ batch_metrics.reconciled_amount_inr|currency_inr }}</div>
           </div>
           <div class="summary-card danger">
             <div class="label">Unresolved Amount</div>
-            <div class="value">₹{{ '%,.2f'|format(batch_metrics.unresolved_amount_inr) }}</div>
+            <div class="value">{{ batch_metrics.unresolved_amount_inr|currency_inr }}</div>
           </div>
         </div>
       </div>

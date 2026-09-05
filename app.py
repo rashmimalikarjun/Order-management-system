@@ -27,6 +27,22 @@ app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "0
     "yes",
 }
 
+# Custom template filters for currency and percentage formatting
+@app.template_filter('currency_inr')
+def currency_inr_filter(value):
+    """Format a number as Indian Rupee with thousands separator."""
+    if value is None:
+        return "₹0.00"
+    return "₹{:,.2f}".format(float(value))
+
+@app.template_filter('percentage')
+def percentage_filter(value, decimals=2):
+    """Format a number as a percentage with specified decimal places."""
+    if value is None:
+        return "0.00%"
+    fmt = f"{{:.{decimals}f}}%"
+    return fmt.format(float(value))
+
 DATABASE = os.environ.get("DATABASE_PATH", "catering.db")
 UPI_ID = os.environ.get("UPI_ID", "your-upi-id@okbank")
 UPI_NAME = os.environ.get("UPI_NAME", "Order Management System")
