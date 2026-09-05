@@ -542,7 +542,7 @@
                   {% endif %}
                 </div>
                 <div class="financial-impact">
-                  Impact: ₹{{ '%,.2f'|format(item.financial_impact_inr) }}
+                  Impact: {{ item.financial_impact_inr|currency_inr }}
                 </div>
               </div>
               
